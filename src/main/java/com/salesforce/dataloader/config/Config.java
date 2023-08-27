@@ -302,6 +302,8 @@ public class Config {
     // data access configuration (e.g., for CSV file, database, etc).
     public static final String DAO_TYPE = "dataAccess.type"; //$NON-NLS-1$
     public static final String DAO_NAME = "dataAccess.name"; //$NON-NLS-1$
+    public static final String DAO_FILE_EXT_LIST = "dataAccess.file.extensions";
+    public static final String DEFAULT_DAO_FILE_EXT_LIST = "*.csv";
     public static final String DAO_READ_BATCH_SIZE = "dataAccess.readBatchSize";
     public static final String DAO_WRITE_BATCH_SIZE = "dataAccess.writeBatchSize";
     public static final String DAO_SKIP_TOTAL_COUNT = "dataAccess.skipTotalCount";
@@ -428,6 +430,7 @@ public class Config {
             OUTPUT_ERROR,
             DAO_NAME,
             DAO_TYPE,
+            DAO_FILE_EXT_LIST,
             ENTITY,
             OPERATION,
             DEBUG_MESSAGES,
@@ -597,6 +600,7 @@ public class Config {
         setDefaultValue(WIZARD_HEIGHT, DEFAULT_WIZARD_HEIGHT);
         setDefaultValue(DAO_READ_PREPROCESSOR_SCRIPT, "");
         setDefaultValue(DAO_WRITE_POSTPROCESSOR_SCRIPT, "");
+        setDefaultValue(DAO_FILE_EXT_LIST, DEFAULT_DAO_FILE_EXT_LIST);
     }
 
     /**

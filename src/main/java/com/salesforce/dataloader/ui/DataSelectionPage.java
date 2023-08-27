@@ -42,6 +42,7 @@ import org.eclipse.swt.layout.GridLayout;
 import org.eclipse.swt.widgets.*;
 
 import com.salesforce.dataloader.action.OperationInfo;
+import com.salesforce.dataloader.config.Config;
 import com.salesforce.dataloader.controller.Controller;
 import com.salesforce.dataloader.dao.DataAccessObjectFactory;
 import com.sforce.soap.partner.DescribeGlobalSObjectResult;
@@ -55,13 +56,17 @@ import com.sforce.soap.partner.DescribeGlobalSObjectResult;
 public class DataSelectionPage extends LoadPage {
 
     // These filter extensions are used to filter which files are displayed.
-    private static final String[] FILTER_EXTS = { "*.csv" }; //$NON-NLS-1$
+    private final String[] FILTER_EXTS;
     private ListViewer lv;
 
     private FileFieldEditor csvChooser;
 
     public DataSelectionPage(Controller controller) {
-        super("DataSelectionPage", controller); //$NON-NLS-1$ //$NON-NLS-2$
+        super("DataSelectionPage", controller); //$NON-NLS-1$ //$NON-NLS-2$        
+        FILTER_EXTS = controller.getConfig().getString(Config.DAO_FILE_EXT_LIST).split(",");
+        for (int i=0; i<FILTER_EXTS.length; i++) {
+            FILTER_EXTS[i] = FILTER_EXTS[i].strip();
+        }
     }
 
     @Override
@@ -197,12 +202,24 @@ public class DataSelectionPage extends LoadPage {
         IStructuredSelection selection = (IStructuredSelection)lv.getSelection();
         DescribeGlobalSObjectResult selectedEntity = (DescribeGlobalSObjectResult)selection.getFirstElement();
         DataSelectionDialog dlg = new DataSelectionDialog(getShell(), controller);
+        String selectedFile = getFileNameWithCSVExtenstion(csvChooser.getStringValue());
         if (dlg.open(DataAccessObjectFactory.CSV_READ_TYPE, 
-                csvChooser.getStringValue(), selectedEntity.getName())) {
+                selectedFile, selectedEntity.getName())) {
             return super.getNextPage();
         } else {
             return this;
         }
+    }
+    
+    private String getFileNameWithCSVExtenstion(String filename) {
+        String targetExtension = ".csv";
+        int extIndex = filename.lastIndexOf(".");
+        if (extIndex == -1) {
+            filename = filename + targetExtension;
+        } else {
+            filename = filename.substring(0, extIndex) + targetExtension;
+        }
+        return filename;
     }
 
     /*

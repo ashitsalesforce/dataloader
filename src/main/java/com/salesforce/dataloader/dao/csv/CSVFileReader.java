@@ -43,7 +43,6 @@ import org.apache.logging.log4j.LogManager;
 
 import com.salesforce.dataloader.config.Config;
 import com.salesforce.dataloader.config.Messages;
-import com.salesforce.dataloader.controller.Controller;
 import com.salesforce.dataloader.dao.DataReader;
 import com.salesforce.dataloader.exception.DataAccessObjectException;
 import com.salesforce.dataloader.exception.DataAccessObjectInitializationException;
@@ -71,6 +70,7 @@ public class CSVFileReader implements DataReader {
     private boolean isOpen;
     private char[] csvDelimiters;
     private Config config;
+    private boolean ignoreDelimiterConfig;
 
     // Handles 3 types of CSV files:
     // 1. CSV files provided by the user for upload operations: ignoreDelimiterConfig = false, isQueryOperationResult = false
@@ -80,6 +80,17 @@ public class CSVFileReader implements DataReader {
     public CSVFileReader(File file, Config config, boolean ignoreDelimiterConfig, boolean isQueryOperationResult) {
         this.file = file;
         this.config = config;
+        this.ignoreDelimiterConfig = ignoreDelimiterConfig;
+        final String preprocessorScript = config.getString(Config.DAO_READ_PREPROCESSOR_SCRIPT);
+        if (preprocessorScript != null && !preprocessorScript.isBlank()) {
+            List<String> command = new ArrayList<String>();
+            command.add(preprocessorScript);
+            command.add(file.getAbsolutePath());
+            int exitVal = AppUtil.exec(command, null);
+            if (exitVal != 0) {
+                LOGGER.warn("Exit value of " + preprocessorScript + " = " + exitVal);
+            }
+        }
         StringBuilder separator = new StringBuilder();
         if (ignoreDelimiterConfig) {
             separator.append(AppUtil.COMMA);
@@ -186,7 +197,7 @@ public class CSVFileReader implements DataReader {
             String errMsg = Messages.getFormattedString("CSVFileDAO.errorRowTooLarge", new String[]{
                     String.valueOf(currentRowNumber), String.valueOf(record.size()), String.valueOf(headerRow.size())});
             throw new DataAccessRowException(errMsg);
-        } else if (record.size() < headerRow.size()) {
+        } else if (record.size() < headerRow.size() && !this.ignoreDelimiterConfig) {
             String errMsg = Messages.getFormattedString("CSVFileDAO.errorRowTooSmall", new String[]{
                     String.valueOf(currentRowNumber), String.valueOf(record.size()), String.valueOf(headerRow.size())});
             throw new DataAccessRowException(errMsg);

@@ -60,6 +60,7 @@ public class CSVFileWriter implements DataWriter {
     private BufferedWriter fileOut;
     private List<String> columnNames = new ArrayList<String>();
     private int currentRowNumber = 0;
+    private Config config;
 
     /**
      * <code>open</code> is true if the writer file is open, false otherwise.
@@ -80,6 +81,7 @@ public class CSVFileWriter implements DataWriter {
     public CSVFileWriter(String fileName, Config config, String columnDelimiterStr) {
 
         this.fileName = fileName;
+        this.config = config;
         this.capitalizedHeadings = true;
         encoding = config.getCsvEncoding(true);
         logger.debug(this.getClass().getName(), "encoding used to write to CSV file is " + encoding);
@@ -137,6 +139,13 @@ public class CSVFileWriter implements DataWriter {
             if (! columnNames.isEmpty()) {
                 columnNames.clear();
             }
+        }
+        final String postprocessorScript = this.config.getString(Config.DAO_WRITE_POSTPROCESSOR_SCRIPT);
+        if (postprocessorScript != null && !postprocessorScript.isBlank()) {
+            ArrayList<String> cmd = new ArrayList<String>();
+            cmd.add(postprocessorScript);
+            cmd.add(this.fileName);
+            AppUtil.exec(cmd, null);
         }
     }
     
