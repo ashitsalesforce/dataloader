@@ -21,9 +21,6 @@
     <test.user.default>admin@org.com</test.user.default>
     <test.user.restricted>standard@org.com</test.user.restricted>
     <test.password></test.password>
-    <test.pkceport>7171</test.pkceport>
-    <test.clientid>YOUR_CLIENT_ID</test.clientid>
-
     <!-- use the encrypted password -->
     <test.encryptionFile></test.encryptionFile>
     <test.redirect>true</test.redirect>
@@ -607,14 +604,16 @@
               <skipTests>${skip-unit-tests}</skipTests>
               <excludes>
                 <!-- skip integration tests -->
-                <exclude>**/client/**,
+                <exclude>
+                	**/client/**,
                     **/dyna/SObjectReferenceConverterTest.*,
                     **/integration/**,
                     **/mapping/LoadMapperTest.*,
                     **/oauth/OAuthPKCEAndServerFlowTest.*,
                     **/oauth/OAuthFlowDetectionTest.*,
                     **/mapping/SOQLMapperTest.*,
-                    **/process/**</exclude>
+                    **/process/**
+                </exclude>
               </excludes>
             </configuration>
           </execution>

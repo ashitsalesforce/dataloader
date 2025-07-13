@@ -133,6 +133,15 @@ abstract public class TestBase {
         if (sysPropVal != null) {
             TEST_PROPS.put(AppConfig.PROP_PASSWORD, sysPropVal);
         }
+        sysPropVal = systemProperties.getProperty("test.clientid");
+        if (sysPropVal != null) {
+            TEST_PROPS.put("sfdc.oauth.Production.clientid", sysPropVal);
+            TEST_PROPS.put("sfdc.oauth.Sandbox.clientid", sysPropVal);
+        }
+        sysPropVal = systemProperties.getProperty("test.pkceport");
+        if (sysPropVal != null) {
+            TEST_PROPS.put("sfdc.oauth.pkce.port", sysPropVal);
+        }
     }
 
     private static Properties loadTestProperties() {

@@ -2,12 +2,50 @@
 
 usage() {
   echo "Usage: "
-  echo "$0 [-d] [-D] [-c] [-i][-t <test class name without the package prefix com.salesforce.dataloader e.g. dyna.DateConverterTest>] <test org URL> <test admin username> <test regular user username> <encrypted test password>"
+  echo "$0 [-d] [-D] [-c] [-i][-t <test class name without the package prefix com.salesforce.dataloader e.g. dyna.DateConverterTest>] [--pkceport PORT] [--clientid CLIENT_ID] [--chromedriver PATH] [--geckodriver PATH] <test org URL> <test admin username> <test regular user username> <encrypted test password>"
   echo "Listening on port 5005 for IDE to start the debugging session if -d is specified."
   echo "Run 'mvn clean package' before encrypting password if -c is specified."
   echo "Ignore test failures and continue test run if -i is specified."
   exit 1
 }
+
+# Default values for named arguments
+PKCEPORT=7171
+CLIENTID="YOUR_CLIENT_ID"
+CHROMEDRIVER="/usr/local/bin/chromedriver"
+GECKODRIVER="/usr/local/bin/geckodriver"
+
+# Parse named arguments before getopts
+while [[ $# -gt 0 ]]; do
+  case $1 in
+    --pkceport)
+      PKCEPORT="$2"
+      shift 2
+      ;;
+    --clientid)
+      CLIENTID="$2"
+      shift 2
+      ;;
+    --chromedriver)
+      CHROMEDRIVER="$2"
+      shift 2
+      ;;
+    --geckodriver)
+      GECKODRIVER="$2"
+      shift 2
+      ;;
+    --)
+      shift
+      break
+      ;;
+    -*|--*)
+      break
+      ;;
+    *)
+      break
+      ;;
+  esac
+done
 
 # To generate encrypted password
 # build jar with the following command:
@@ -79,4 +117,4 @@ done
 #decryptedPassword="$(java ${debugEncryption} -cp ${jarname} com.salesforce.dataloader.process.DataLoaderRunner run.mode=encrypt -d ${encryptedPassword} ${encryptionFile} | tail -1)"
 #echo "decryptedPassword = ${decryptedPassword}"
 
-mvn ${failfast} -Dtest.endpoint=${1} -Dtest.user.default=${2} -Dtest.user.restricted=${3} -Dtest.password=${encryptedPassword} ${encryptionFileFlag} verify ${debug} ${test} ${additionalOptions}
+mvn ${failfast} -Dtest.endpoint=${1} -Dtest.user.default=${2} -Dtest.user.restricted=${3} -Dtest.password=${encryptedPassword} ${encryptionFileFlag} -Dtest.pkceport=${PKCEPORT} -Dtest.clientid=${CLIENTID} -Dwebdriver.chrome.driver=${CHROMEDRIVER} -Dwebdriver.gecko.driver=${GECKODRIVER} verify ${debug} ${test} ${additionalOptions}
