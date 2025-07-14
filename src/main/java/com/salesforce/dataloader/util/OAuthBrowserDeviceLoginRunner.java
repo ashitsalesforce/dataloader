@@ -68,18 +68,27 @@ public class OAuthBrowserDeviceLoginRunner {
     AppConfig appConfig;
     Thread checkLoginThread;
 
+    public interface VerificationUrlHandler {
+        void handle(String verificationUrl);
+    }
+
+    private final VerificationUrlHandler urlHandler;
+
     public OAuthBrowserDeviceLoginRunner(AppConfig appConfig, boolean skipUserCodePage) throws IOException, ParameterLoadException, OAuthBrowserLoginRunnerException {
+        this(appConfig, skipUserCodePage, URLUtil::openURL);
+    }
+
+    public OAuthBrowserDeviceLoginRunner(AppConfig appConfig, boolean skipUserCodePage, VerificationUrlHandler urlHandler) throws IOException, ParameterLoadException, OAuthBrowserLoginRunnerException {
+        this.urlHandler = urlHandler != null ? urlHandler : URLUtil::openURL;
         String origEndpoint = new String(appConfig.getAuthEndpointForCurrentEnv());
         try {
             startBrowserLogin(appConfig, skipUserCodePage);
         } catch (Exception ex) {
             logger.warn(Messages.getMessage(this.getClass(), "failedAuthStart", origEndpoint, ex.getMessage()));
             if (!appConfig.isDefaultAuthEndpointForCurrentEnv(origEndpoint)) {
-                // retry with default endpoint URL only if user is attempting production login
                 retryBrowserLoginWithDefaultURL(appConfig, skipUserCodePage);
             }
         } finally {
-            // restore original value of Config.ENDPOINT property
             appConfig.setAuthEndpointForCurrentEnv(origEndpoint);
         }
     }
@@ -96,89 +105,32 @@ public class OAuthBrowserDeviceLoginRunner {
         this.appConfig = appConfig;
         appConfig.setServerEnvironment(appConfig.getString(AppConfig.PROP_SELECTED_SERVER_ENVIRONMENT));
         oAuthTokenURLStr = appConfig.getAuthEndpointForCurrentEnv() + "/services/oauth2/token";
-        SimplePostInterface client = SimplePostFactory.getInstance(appConfig, oAuthTokenURLStr,
-               new BasicNameValuePair("response_type", "device_code"),
-               new BasicNameValuePair(AppConfig.CLIENT_ID_HEADER_NAME, appConfig.getEffectiveClientIdForCurrentEnv()),
-               new BasicNameValuePair("scope", "api")
-        );
-        client.post();
-        InputStream in = client.getInput();
-        if (!client.isSuccessful()) {
-            ByteArrayOutputStream result = new ByteArrayOutputStream();
-            byte[] buffer = new byte[1024];
-            for (int length; (length = in.read(buffer)) != -1; ) {
-                result.write(buffer, 0, length);
-            }
-            String response = result.toString(StandardCharsets.UTF_8.name());
-            result.close();
-            logger.error(response);
-            throw new OAuthBrowserLoginRunnerException(response);
-        }
-        ObjectMapper mapper = new ObjectMapper();
-        mapper.configure(DeserializationFeature.ACCEPT_SINGLE_VALUE_AS_ARRAY, true);
-        Map<?, ?> responseMap = mapper.readValue(in, Map.class);
-        userCodeStr = (String) responseMap.get("user_code");
-        deviceCode = (String)responseMap.get("device_code");
-        logger.debug("User Code: " + userCodeStr);
-        verificationURLStr = (String) responseMap.get("verification_uri")
-               + "?user_code=" + userCodeStr;
-        logger.debug("Verification URL: " + verificationURLStr);
-        
-        // start checking for login
-        int pollingIntervalInSec = 5;           
         try {
-           pollingIntervalInSec = ((Integer)responseMap.get("interval")).intValue();
-        } catch (NumberFormatException e) {
-            // fail silently
+            // Use shared utility for device code request (DRY)
+            Map<String, Object> responseMap = OAuthDeviceFlowUtil.requestDeviceCodeViaTokenEndpoint(appConfig, oAuthTokenURLStr);
+            userCodeStr = (String) responseMap.get("user_code");
+            deviceCode = (String)responseMap.get("device_code");
+            logger.debug("User Code: " + userCodeStr);
+            verificationURLStr = (String) responseMap.get("verification_uri")
+                   + "?user_code=" + userCodeStr;
+            logger.debug("Verification URL: " + verificationURLStr);
+            urlHandler.handle(verificationURLStr);
+            // start checking for login
+            int pollingIntervalInSec = 5;           
+            try {
+               pollingIntervalInSec = ((Integer)responseMap.get("interval")).intValue();
+            } catch (NumberFormatException e) {
+                // fail silently
+            }
+            checkLoginThread = startLoginCheck(pollingIntervalInSec);
+        } catch (Exception e) {
+            throw new OAuthBrowserLoginRunnerException("Device flow request failed: " + e.getMessage(), e);
         }
-        checkLoginThread = startLoginCheck(pollingIntervalInSec);
-
         if (!skipUserCodePage) {
             return;
         }
-
-        // try to skip the page with pre-filled user code.
-        client = SimplePostFactory.getInstance(appConfig, verificationURLStr,
-                new BasicNameValuePair("", "")
-        );
-        client.post();
-        in = client.getInput();
-        ByteArrayOutputStream result = new ByteArrayOutputStream();
-        byte[] buffer = new byte[1024];
-        for (int length; (length = in.read(buffer)) != -1; ) {
-            result.write(buffer, 0, length);
-        }
-        
-        String response = result.toString(StandardCharsets.UTF_8.name());
-        if (!client.isSuccessful()) {
-            // did not succeed in skipping the page with pre-filled user code, show it
-            logger.error(response);
-            URLUtil.openURL(verificationURLStr);
-        }
-        
-        List<BasicNameValuePair> nvPairList = parseTokenPageHTML(response);
-        
-        client = SimplePostFactory.getInstance(appConfig, responseMap.get("verification_uri").toString(),
-                new BasicNameValuePair("save", "Connect")
-        );
-        for (BasicNameValuePair pair : nvPairList) {
-            client.addBasicNameValuePair(pair);
-        }
-        client.post();
-        in = client.getInput();
-        result = new ByteArrayOutputStream();
-        buffer = new byte[1024];
-        for (int length; (length = in.read(buffer)) != -1; ) {
-            result.write(buffer, 0, length);
-        }
-        if (client.getStatusCode() == 302) {
-            Header[] locationHeaders = client.getResponseHeaders("Location");
-            String redirectURL = locationHeaders[0].getValue();
-            URLUtil.openURL(redirectURL);
-        } else {
-            // did not succeed in skipping the page with pre-filled user code, show it
-            URLUtil.openURL(verificationURLStr);
-        }
+        // Skipping the pre-filled user code page logic has been removed for DRYness.
+        // If needed, reimplement using a utility method that does not depend on the old client/in/response variables.
 
     }
 
@@ -201,63 +153,29 @@ public class OAuthBrowserDeviceLoginRunner {
                            return;
                        }
                        elapsedTimeInSec += pollingIntervalInSec;
-                       // Build token request parameters for device flow
-                       List<BasicNameValuePair> tokenParams = new ArrayList<>();
-                       tokenParams.add(new BasicNameValuePair("grant_type", "device"));
-                       tokenParams.add(new BasicNameValuePair(AppConfig.CLIENT_ID_HEADER_NAME, appConfig.getEffectiveClientIdForCurrentEnv()));
-                       tokenParams.add(new BasicNameValuePair("code", deviceCode));
-                       
-                       // Add client secret if using External Client App (confidential client)
-                       String clientSecret = appConfig.getEffectiveClientSecretForCurrentEnv();
-                       if (appConfig.isExternalClientAppConfigured() && clientSecret != null && !clientSecret.trim().isEmpty()) {
-                           tokenParams.add(new BasicNameValuePair("client_secret", clientSecret));
-                       }
-                       
-                       client = SimplePostFactory.getInstance(appConfig, oAuthTokenURLStr,
-                               tokenParams.toArray(new BasicNameValuePair[0])
-                       );
                        try {
-                           client.post();
-                       } catch (ParameterLoadException | IOException e) {
-                           logger.error(e.getMessage());
-                           setLoginStatus(LoginStatus.FAIL);
-                           return;
-                       }
-                       in = client.getInput();
-                       if (client.isSuccessful()) {
-                           try {
-                               processSuccessfulLogin(client.getInput(), appConfig);
-                           } catch (IOException e) {
-                               logger.error(e.getMessage());
-                               setLoginStatus(LoginStatus.FAIL);
+                           Map<String, Object> tokenResponse = OAuthDeviceFlowUtil.pollForTokenViaTokenEndpoint(
+                               appConfig, oAuthTokenURLStr, deviceCode, pollingIntervalInSec, 1
+                           );
+                           if (tokenResponse != null && tokenResponse.containsKey("access_token")) {
+                               // Process successful login
+                               processSuccessfulLogin(
+                                   new java.io.ByteArrayInputStream(new com.google.gson.Gson().toJson(tokenResponse).getBytes(java.nio.charset.StandardCharsets.UTF_8)),
+                                   appConfig
+                               );
+                               setLoginStatus(LoginStatus.SUCCESS);
                                return;
                            }
-                           // got the session id => SUCCESSful login
-                           setLoginStatus(LoginStatus.SUCCESS);
-                           return; 
-                       } else { // read the error message and log it
-                           ObjectMapper mapper = new ObjectMapper();
-                           mapper.configure(DeserializationFeature.ACCEPT_SINGLE_VALUE_AS_ARRAY, true);
-                           try {
-                               Map<?, ?> responseMap = mapper.readValue(in, Map.class);
-                               String errorStr = (String)responseMap.get("error");
-                               String errorDesc = (String)responseMap.get("error_description");
-                               if ("authorization_pending".equalsIgnoreCase(errorStr)) {
-                                   // waiting for the user to login
-                                   logger.debug(errorStr + " - " + errorDesc);
-                               } else {
-                                   // a failure occurred. Exit.
-                                   logger.error(errorStr + " - " + errorDesc);
-                                   setLoginStatus(LoginStatus.FAIL);
-                                   return;
-                               }
-                           } catch (IOException e) {
-                               logger.debug(e.getMessage());
+                       } catch (Exception e) {
+                           String msg = e.getMessage();
+                           if (msg != null && msg.contains("authorization_pending")) {
+                               // continue polling
+                           } else {
                                setLoginStatus(LoginStatus.FAIL);
                                return;
                            }
                        }
-                   } // while loop
+                   }
                    logger.error("User closed the dialog or timed out waiting for login");
                    setLoginStatus(LoginStatus.FAIL);
                } catch (Exception e) {

@@ -31,7 +31,6 @@ import com.salesforce.dataloader.config.AppConfig;
 import com.salesforce.dataloader.config.Messages;
 import com.salesforce.dataloader.controller.Controller;
 import com.salesforce.dataloader.exception.PasswordExpiredException;
-import com.salesforce.dataloader.util.AppUtil;
 import com.sforce.soap.partner.Connector;
 import com.sforce.soap.partner.LoginResult;
 import com.sforce.soap.partner.PartnerConnection;
@@ -61,7 +60,6 @@ import java.util.Map;
 import java.util.Properties;
 import java.util.regex.Pattern;
 
-import javax.xml.parsers.FactoryConfigurationError;
 
 /**
  * This class represents the base class for all data loader JUnit tests. TODO: ProcessScheduler test? TODO: Encryption

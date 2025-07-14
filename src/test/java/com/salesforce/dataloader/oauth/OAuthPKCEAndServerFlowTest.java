@@ -40,27 +40,17 @@ import org.openqa.selenium.support.ui.WebDriverWait;
 
 import com.salesforce.dataloader.ConfigTestBase;
 import com.salesforce.dataloader.config.AppConfig;
+import com.salesforce.dataloader.util.OAuthPKCEUtil;
+import com.salesforce.dataloader.util.OAuthRedirectListener;
+import com.salesforce.dataloader.controller.Controller;
 
 import org.apache.http.client.methods.CloseableHttpResponse;
 import org.apache.http.client.methods.HttpPost;
-import org.apache.http.client.entity.UrlEncodedFormEntity;
 import org.apache.http.impl.client.CloseableHttpClient;
 import org.apache.http.impl.client.HttpClients;
-import org.apache.http.message.BasicNameValuePair;
 import org.json.JSONObject;
 
-import java.io.BufferedReader;
-import java.io.InputStreamReader;
-import java.net.ServerSocket;
-import java.net.Socket;
-import java.net.URLDecoder;
-import java.nio.charset.StandardCharsets;
 import java.time.Duration;
-import java.util.*;
-
-import java.security.MessageDigest;
-import java.security.SecureRandom;
-import java.util.Base64;
 
 import static org.junit.Assert.assertTrue;
 
@@ -81,7 +71,6 @@ public class OAuthPKCEAndServerFlowTest extends ConfigTestBase {
     private String redirectUri;
     private String scopes;
     private String authEndpoint;
-    private String authUrl;
     private String tokenUrl;
     private String username;
     private String password;
@@ -89,16 +78,14 @@ public class OAuthPKCEAndServerFlowTest extends ConfigTestBase {
 
     private WebDriver driver;
     private WebDriverWait wait;
-    private ServerSocket serverSocket;
-    private String lastAuthCode;
+    private OAuthRedirectListener redirectListener;
     private int pkcePort;
 
     @Before
     public void setUp() throws Exception {
         // Set up AppConfig and environment-based values
         AppConfig appConfig = getController().getAppConfig();
-        String env = appConfig.getString(AppConfig.PROP_SELECTED_SERVER_ENVIRONMENT);
-        clientId = appConfig.getOAuthEnvironmentString(env, AppConfig.CLIENTID_LITERAL);
+        clientId = getPKCEClientId();
         String pkcePortStr = appConfig.getString(AppConfig.PROP_OAUTH_PKCE_PORT);
         if (pkcePortStr != null && !pkcePortStr.isEmpty()) {
             pkcePort = Integer.parseInt(pkcePortStr);
@@ -106,13 +93,14 @@ public class OAuthPKCEAndServerFlowTest extends ConfigTestBase {
             pkcePort = AppConfig.DEFAULT_OAUTH_PKCE_PORT;
         }
         redirectUri = "http://localhost:" + pkcePort + "/OauthRedirect";
-        authEndpoint = appConfig.getAuthEndpointForCurrentEnv();
-        authUrl = authEndpoint + "/services/oauth2/authorize";
+        //authEndpoint = appConfig.getAuthEndpointForCurrentEnv();
+        authEndpoint = "https://login.salesforce.com";
         tokenUrl = authEndpoint + "/services/oauth2/token";
         username = appConfig.getString(AppConfig.PROP_USERNAME);
         password = appConfig.getString(AppConfig.PROP_PASSWORD);
         scopes = "api";
-        testApiEndpoint = "/services/data/v64.0/sobjects/User";
+        String apiVersion = Controller.getAPIVersion();
+        testApiEndpoint = "/services/data/v" + apiVersion + "/sobjects/User";
 
         // Check for GeckoDriver system property
         String geckoDriverPath = System.getProperty("webdriver.gecko.driver");
@@ -127,76 +115,13 @@ public class OAuthPKCEAndServerFlowTest extends ConfigTestBase {
         options.addArguments("--headless");
         driver = new FirefoxDriver(options);
         wait = new WebDriverWait(driver, Duration.ofSeconds(20));
+        redirectListener = new OAuthRedirectListener(pkcePort, "<html><body>Test complete. You may close this window.</body></html>");
     }
 
     @After
     public void tearDown() throws Exception {
         if (driver != null) driver.quit();
-        if (serverSocket != null && !serverSocket.isClosed()) serverSocket.close();
-    }
-
-    /**
-     * Helper: Start a simple HTTP server to capture the redirect with the authorization code.
-     */
-    private void startRedirectListener() throws Exception {
-        serverSocket = new ServerSocket(pkcePort); // Port must match redirectUri
-        Thread listener = new Thread(() -> {
-            try (Socket socket = serverSocket.accept()) {
-                BufferedReader in = new BufferedReader(new InputStreamReader(socket.getInputStream()));
-                String line;
-                String code = null;
-                while ((line = in.readLine()) != null && !line.isEmpty()) {
-                    if (line.startsWith("GET ")) {
-                        int idx = line.indexOf("?");
-                        if (idx > 0 && line.contains("/OauthRedirect")) {
-                            String query = line.substring(idx + 1, line.indexOf(" ", idx));
-                            for (String param : query.split("&")) {
-                                if (param.startsWith("code=")) {
-                                    code = URLDecoder.decode(param.substring(5), StandardCharsets.UTF_8);
-                                    break;
-                                }
-                            }
-                        }
-                    }
-                }
-                lastAuthCode = code;
-                // Respond to browser
-                String httpResponse = "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\n\r\n" +
-                        "<html><body>Authorization code received. You may close this window.</body></html>";
-                socket.getOutputStream().write(httpResponse.getBytes(StandardCharsets.UTF_8));
-            } catch (Exception ignored) {}
-        });
-        listener.setDaemon(true);
-        listener.start();
-    }
-
-    /**
-     * Helper: Exchange authorization code for access token.
-     */
-    private JSONObject exchangeCodeForToken(String code, boolean usePkce, String codeVerifier) throws Exception {
-        List<BasicNameValuePair> params = new ArrayList<>();
-        params.add(new BasicNameValuePair("grant_type", "authorization_code"));
-        params.add(new BasicNameValuePair("client_id", clientId));
-        params.add(new BasicNameValuePair("code", code));
-        params.add(new BasicNameValuePair("redirect_uri", redirectUri));
-        if (usePkce) {
-            params.add(new BasicNameValuePair("code_verifier", codeVerifier));
-        }
-        try (CloseableHttpClient client = HttpClients.createDefault()) {
-            HttpPost post = new HttpPost(tokenUrl);
-            post.setEntity(new UrlEncodedFormEntity(params));
-            try (CloseableHttpResponse response = client.execute(post)) {
-                BufferedReader reader = new BufferedReader(new InputStreamReader(response.getEntity().getContent()));
-                StringBuilder sb = new StringBuilder();
-                String line;
-                while ((line = reader.readLine()) != null) {
-                    sb.append(line);
-                }
-                JSONObject tokenResponse = new JSONObject(sb.toString());
-                System.out.println("[PKCE] Token endpoint response: " + tokenResponse.toString(2));
-                return tokenResponse;
-            }
-        }
+        if (redirectListener != null) redirectListener.stop();
     }
 
     /**
@@ -215,44 +140,19 @@ public class OAuthPKCEAndServerFlowTest extends ConfigTestBase {
     }
 
     /**
-     * PKCE code verifier and code challenge generation logic copied from OAuthServerFlow.java
-     * (private void generatePKCEParameters())
-     */
-    private static String generateCodeVerifier() {
-        // Generate code verifier (43-128 characters, URL-safe)
-        SecureRandom random = new SecureRandom();
-        byte[] codeVerifierBytes = new byte[32];
-        random.nextBytes(codeVerifierBytes);
-        return Base64.getUrlEncoder().withoutPadding().encodeToString(codeVerifierBytes);
-    }
-
-    /**
-     * PKCE code challenge generation logic copied from OAuthServerFlow.java
-     */
-    private static String generateCodeChallenge(String codeVerifier) throws Exception {
-        MessageDigest digest = MessageDigest.getInstance("SHA-256");
-        byte[] challengeBytes = digest.digest(codeVerifier.getBytes(StandardCharsets.UTF_8));
-        return Base64.getUrlEncoder().withoutPadding().encodeToString(challengeBytes);
-    }
-
-    /**
      * Test PKCE flow end-to-end.
      */
     @Test
     public void testPKCEFlow() throws Exception {
-        // Generate PKCE code verifier and challenge using Dataloader's logic (see OAuthServerFlow.java)
-        String codeVerifier = generateCodeVerifier();
-        String codeChallenge = generateCodeChallenge(codeVerifier);
+        // Generate PKCE code verifier, challenge, and state using shared utility
+        OAuthPKCEUtil.PKCEParams pkce = OAuthPKCEUtil.generatePKCEParams();
 
-        startRedirectListener();
+        redirectListener.start();
 
-        // Build authorization URL
-        String url = authUrl + "?response_type=code" +
-                "&client_id=" + clientId +
-                "&redirect_uri=" + redirectUri +
-                "&scope=" + scopes.replace(" ", "%20") +
-                "&code_challenge=" + codeChallenge +
-                "&code_challenge_method=S256";
+        // Build authorization URL using shared utility
+        String url = OAuthPKCEUtil.buildAuthorizationUrl(
+            authEndpoint, clientId, redirectUri, scopes, pkce.codeChallenge, pkce.state
+        );
 
         System.out.println("[PKCE] Authorization URL: " + url);
         driver.get(url);
@@ -277,20 +177,33 @@ public class OAuthPKCEAndServerFlowTest extends ConfigTestBase {
         }
         // Wait for redirect and code
         System.out.println("[PKCE] Waiting for authorization code...");
-        for (int i = 0; i < 20 && lastAuthCode == null; i++) Thread.sleep(500);
-        if (lastAuthCode != null) {
-            System.out.println("[PKCE] Received authorization code: " + lastAuthCode);
+        String code = redirectListener.waitForCode(10);
+        if (code != null) {
+            System.out.println("[PKCE] Received authorization code: " + code);
         } else {
             System.out.println("[PKCE] Did NOT receive authorization code after waiting.");
         }
-        assertTrue("Did not receive authorization code", lastAuthCode != null);
-        // Exchange code for token
-        JSONObject tokenResponse = exchangeCodeForToken(lastAuthCode, true, codeVerifier);
+        assertTrue("Did not receive authorization code", code != null);
+        // Exchange code for token using shared utility
+        JSONObject tokenResponse = OAuthPKCEUtil.exchangeCodeForToken(
+            tokenUrl, clientId, code, redirectUri, pkce.codeVerifier
+        );
+        System.out.println("[PKCE] Token endpoint response: " + tokenResponse.toString(2));
         assertTrue("No access token in response", tokenResponse.has("access_token"));
         // Validate scopes
         assertTrue("Granted scopes missing or incorrect", tokenResponse.has("scope") && tokenResponse.getString("scope").contains("api"));
         // Use token to call Salesforce API
         assertTrue("Access token did not allow API access", callSalesforceApi(tokenResponse.getString("access_token")));
+        // Check for custom sObject TestField__c with label TestField
+        assertTrue("Org does not have custom object TestField__c with label TestField",
+            OAuthTestUtil.orgHasCustomObject(
+                tokenResponse.getString("access_token"),
+                tokenResponse.getString("instance_url"),
+                "TestField",
+                "TestField__c",
+                Controller.getAPIVersion()
+            )
+        );
     }
 
     /**
@@ -298,14 +211,14 @@ public class OAuthPKCEAndServerFlowTest extends ConfigTestBase {
      * Enable it if you want to test the Web Server OAuth flow.
      * You would most likely need to disable the PKCE flow in your Salesforce connected app settings and disable the PKCE test above.
      */
-    @Ignore
+    @Test
     public void testWebServerFlow() throws Exception {
-        startRedirectListener();
+        redirectListener.start();
         // Build authorization URL (no PKCE)
-        String url = authUrl + "?response_type=code" +
-                "&client_id=" + clientId +
-                "&redirect_uri=" + redirectUri +
-                "&scope=" + scopes.replace(" ", "%20");
+        clientId = getServerClientId();
+        String url = OAuthPKCEUtil.buildAuthorizationUrl(
+            authEndpoint, clientId, redirectUri, scopes, null, null
+        );
         System.out.println("[WebServer] Authorization URL: " + url);
         driver.get(url);
         // Salesforce login page
@@ -329,19 +242,32 @@ public class OAuthPKCEAndServerFlowTest extends ConfigTestBase {
         }
         // Wait for redirect and code
         System.out.println("[WebServer] Waiting for authorization code...");
-        for (int i = 0; i < 20 && lastAuthCode == null; i++) Thread.sleep(500);
-        if (lastAuthCode != null) {
-            System.out.println("[WebServer] Received authorization code: " + lastAuthCode);
+        String code = redirectListener.waitForCode(10);
+        if (code != null) {
+            System.out.println("[WebServer] Received authorization code: " + code);
         } else {
             System.out.println("[WebServer] Did NOT receive authorization code after waiting.");
         }
-        assertTrue("Did not receive authorization code", lastAuthCode != null);
-        // Exchange code for token
-        JSONObject tokenResponse = exchangeCodeForToken(lastAuthCode, false, null);
+        assertTrue("Did not receive authorization code", code != null);
+        // Exchange code for token using shared utility (no PKCE)
+        JSONObject tokenResponse = OAuthPKCEUtil.exchangeCodeForToken(
+            tokenUrl, clientId, code, redirectUri, null
+        );
+        System.out.println("[WebServer] Token endpoint response: " + tokenResponse.toString(2));
         assertTrue("No access token in response", tokenResponse.has("access_token"));
         // Validate scopes
         assertTrue("Granted scopes missing or incorrect", tokenResponse.has("scope") && tokenResponse.getString("scope").contains("api"));
         // Use token to call Salesforce API
         assertTrue("Access token did not allow API access", callSalesforceApi(tokenResponse.getString("access_token")));
+        // Check for custom sObject TestField__c with label TestField
+        assertTrue("Org does not have custom object TestField__c with label TestField",
+            OAuthTestUtil.orgHasCustomObject(
+                tokenResponse.getString("access_token"),
+                tokenResponse.getString("instance_url"),
+                "TestField",
+                "TestField__c",
+                Controller.getAPIVersion()
+            )
+        );
     }
 } 

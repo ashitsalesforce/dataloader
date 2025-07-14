@@ -14,6 +14,9 @@ PKCEPORT=7171
 CLIENTID="YOUR_CLIENT_ID"
 CHROMEDRIVER="/usr/local/bin/chromedriver"
 GECKODRIVER="/usr/local/bin/geckodriver"
+CLIENTID_PKCE=""
+CLIENTID_SERVER=""
+CLIENTID_DEVICE=""
 
 # Parse named arguments before getopts
 while [[ $# -gt 0 ]]; do
@@ -24,6 +27,18 @@ while [[ $# -gt 0 ]]; do
       ;;
     --clientid)
       CLIENTID="$2"
+      shift 2
+      ;;
+    --clientid-pkce)
+      CLIENTID_PKCE="$2"
+      shift 2
+      ;;
+    --clientid-server)
+      CLIENTID_SERVER="$2"
+      shift 2
+      ;;
+    --clientid-device)
+      CLIENTID_DEVICE="$2"
       shift 2
       ;;
     --chromedriver)
@@ -117,4 +132,18 @@ done
 #decryptedPassword="$(java ${debugEncryption} -cp ${jarname} com.salesforce.dataloader.process.DataLoaderRunner run.mode=encrypt -d ${encryptedPassword} ${encryptionFile} | tail -1)"
 #echo "decryptedPassword = ${decryptedPassword}"
 
-mvn ${failfast} -Dtest.endpoint=${1} -Dtest.user.default=${2} -Dtest.user.restricted=${3} -Dtest.password=${encryptedPassword} ${encryptionFileFlag} -Dtest.pkceport=${PKCEPORT} -Dtest.clientid=${CLIENTID} -Dwebdriver.chrome.driver=${CHROMEDRIVER} -Dwebdriver.gecko.driver=${GECKODRIVER} verify ${debug} ${test} ${additionalOptions}
+# Build extra clientid options for Maven
+CLIENTID_PKCE_OPT=""
+CLIENTID_SERVER_OPT=""
+CLIENTID_DEVICE_OPT=""
+if [ -n "$CLIENTID_PKCE" ]; then
+  CLIENTID_PKCE_OPT="-Dtest.clientid.pkce=$CLIENTID_PKCE"
+fi
+if [ -n "$CLIENTID_SERVER" ]; then
+  CLIENTID_SERVER_OPT="-Dtest.clientid.server=$CLIENTID_SERVER"
+fi
+if [ -n "$CLIENTID_DEVICE" ]; then
+  CLIENTID_DEVICE_OPT="-Dtest.clientid.device=$CLIENTID_DEVICE"
+fi
+
+mvn ${failfast} -Dtest.endpoint=${1} -Dtest.user.default=${2} -Dtest.user.restricted=${3} -Dtest.password=${encryptedPassword} ${encryptionFileFlag} -Dtest.pkceport=${PKCEPORT} -Dtest.clientid=${CLIENTID} $CLIENTID_PKCE_OPT $CLIENTID_SERVER_OPT $CLIENTID_DEVICE_OPT -Dwebdriver.chrome.driver=${CHROMEDRIVER} -Dwebdriver.gecko.driver=${GECKODRIVER} verify ${debug} ${test} ${additionalOptions}

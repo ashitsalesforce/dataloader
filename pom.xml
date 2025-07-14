@@ -192,7 +192,6 @@
       <groupId>org.json</groupId>
       <artifactId>json</artifactId>
       <version>20240303</version>
-      <scope>test</scope>
     </dependency>
   </dependencies>
 
@@ -612,8 +611,8 @@
                     **/integration/**,
                     **/mapping/LoadMapperTest.*,
                     **/oauth/OAuthPKCEAndServerFlowTest.*,
-                    **/oauth/OAuthFlowDetectionTest.*,
-                    **/mapping/SOQLMapperTest.*,
+                    **/oauth/OAuthDeviceFlowTest.*,
+                   **/mapping/SOQLMapperTest.*,
                     **/process/**</exclude>
               </excludes>
             </configuration>

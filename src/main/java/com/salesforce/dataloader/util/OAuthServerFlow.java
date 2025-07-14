@@ -63,6 +63,9 @@ import java.util.ArrayList;
 import com.sun.net.httpserver.HttpServer;
 import com.sun.net.httpserver.HttpHandler;
 import com.sun.net.httpserver.HttpExchange;
+import com.salesforce.dataloader.util.OAuthPKCEUtil;
+import com.salesforce.dataloader.util.OAuthRedirectListener;
+import java.text.MessageFormat;
 
 /**
  * OAuth 2.0 Authorization Code Flow with PKCE implementation for server flow authentication.
@@ -75,15 +78,11 @@ public class OAuthServerFlow {
     
     private final AppConfig appConfig;
     private final java.util.function.Consumer<String> statusConsumer;
-    private HttpServer server;
-    private String authorizationCode;
-    private String state;
-    private String codeVerifier;
-    private String codeChallenge;
-    private CountDownLatch authLatch = new CountDownLatch(1);
-    private boolean isRunning = false;
     private int port;
     private final boolean usePkce;
+    private OAuthPKCEUtil.PKCEParams pkceParams;
+    private OAuthRedirectListener redirectListener;
+    private String authorizationCode;
     
     public OAuthServerFlow(AppConfig appConfig) throws ParameterLoadException {
         this(appConfig, true, null);
@@ -124,52 +123,63 @@ public class OAuthServerFlow {
         try {
             // Step 1: Generate PKCE parameters if needed
             if (usePkce) {
-                generatePKCEParameters();
+                pkceParams = OAuthPKCEUtil.generatePKCEParams();
+                // codeVerifier = pkceParams.codeVerifier;
+                // codeChallenge = pkceParams.codeChallenge;
+                // state = pkceParams.state;
             } else {
-                // Always generate state for CSRF protection
-                SecureRandom random = new SecureRandom();
-                byte[] stateBytes = new byte[16];
-                random.nextBytes(stateBytes);
-                state = Base64.getUrlEncoder().withoutPadding().encodeToString(stateBytes);
-                codeVerifier = null;
-                codeChallenge = null;
+                pkceParams = null;
+                // state = OAuthPKCEUtil.generatePKCEParams().state;
+                // codeVerifier = null;
+                // codeChallenge = null;
             }
-            
-            // Step 2: Start local HTTP server
-            startCallbackServer();
-            
+            // Step 2: Start local HTTP server using OAuthRedirectListener
+            redirectListener = new OAuthRedirectListener(port, Labels.getString("OAuthServerFlow.successResponse"));
+            redirectListener.start();
             // Step 3: Build authorization URL
-            String authUrl = buildAuthorizationUrl();
+            String authUrl = OAuthPKCEUtil.buildAuthorizationUrl(
+                appConfig.getAuthEndpointForCurrentEnv(),
+                appConfig.getEffectiveClientIdForCurrentEnv(),
+                "http://localhost:" + port + REDIRECT_URI_PATH,
+                "api",
+                (pkceParams != null ? pkceParams.codeChallenge : null),
+                (pkceParams != null ? pkceParams.state : null)
+            );
             logger.info("Opening browser for OAuth authorization: " + authUrl);
             logger.info("OAuth client_id: " + appConfig.getEffectiveClientIdForCurrentEnv());
             logger.info("OAuth redirect_uri: http://localhost:" + port + REDIRECT_URI_PATH);
             if (statusConsumer != null) {
                 statusConsumer.accept("A browser window has opened for login. If you do not see it, please check your pop-up blocker or open the following URL manually: " + authUrl);
             }
-            
             // Step 4: Open browser
             URLUtil.openURL(authUrl);
-            
             // Step 5: Wait for authorization callback
             logger.info("Waiting for OAuth authorization (timeout: " + timeoutSeconds + " seconds)...");
-            boolean authReceived = authLatch.await(timeoutSeconds, TimeUnit.SECONDS);
-            
-            if (authReceived && authorizationCode != null) {
+            String code = redirectListener.waitForCode(timeoutSeconds);
+            if (code != null) {
+                authorizationCode = code;
                 // Step 6: Exchange authorization code for tokens
                 return exchangeCodeForTokens();
-            } else if (authReceived && authorizationCode == null) {
-                // Callback received with error (handled in CallbackHandler)
-                throw new OAuthFlowNotEnabledException("OAuth callback received with error or no code (possible flow not enabled)");
             } else {
                 logger.warn("OAuth authorization timed out or failed");
                 if (statusConsumer != null) {
                     statusConsumer.accept("OAuth login timed out. Please complete the login in your browser, or check your network and try again.");
                 }
+                // Show error in browser
+                String errorMsg = Labels.getString("OAuthServerFlow.errorResponseTemplate");
+                errorMsg = MessageFormat.format(errorMsg, "OAuth login timed out or failed");
+                // Start a new listener to show the error message
+                OAuthRedirectListener errorListener = new OAuthRedirectListener(port, errorMsg);
+                try {
+                    errorListener.start();
+                    // Wait briefly to allow browser to refresh and see the error
+                    Thread.sleep(5000);
+                } catch (Exception ignored) {} finally {
+                    try { errorListener.stop(); } catch (Exception ignored) {}
+                }
                 return false;
             }
-            
         } catch (com.salesforce.dataloader.exception.ParameterLoadException e) {
-            // Let ParameterLoadException propagate to handler
             throw e;
         } catch (OAuthFlowNotEnabledException e) {
             throw e;
@@ -178,102 +188,24 @@ public class OAuthServerFlow {
             if (statusConsumer != null) {
                 statusConsumer.accept("An unexpected error occurred during browser login: " + e.getMessage());
             }
+            // Show error in browser
+            String errorMsg = Labels.getString("OAuthServerFlow.errorResponseTemplate");
+            errorMsg = MessageFormat.format(errorMsg, e.getMessage());
+            // Start a new listener to show the error message
+            OAuthRedirectListener errorListener = new OAuthRedirectListener(port, errorMsg);
+            try {
+                errorListener.start();
+                // Wait briefly to allow browser to refresh and see the error
+                Thread.sleep(5000);
+            } catch (Exception ignored) {} finally {
+                try { errorListener.stop(); } catch (Exception ignored) {}
+            }
             return false;
         } finally {
-            stopCallbackServer();
-        }
-    }
-    
-    /**
-     * Generates PKCE (Proof Key for Code Exchange) parameters for enhanced security.
-     */
-    private void generatePKCEParameters() throws Exception {
-        // Generate code verifier (43-128 characters, URL-safe)
-        SecureRandom random = new SecureRandom();
-        byte[] codeVerifierBytes = new byte[32];
-        random.nextBytes(codeVerifierBytes);
-        codeVerifier = Base64.getUrlEncoder().withoutPadding().encodeToString(codeVerifierBytes);
-        
-        // Generate code challenge (SHA256 hash of code verifier)
-        MessageDigest digest = MessageDigest.getInstance("SHA-256");
-        byte[] challengeBytes = digest.digest(codeVerifier.getBytes(StandardCharsets.UTF_8));
-        codeChallenge = Base64.getUrlEncoder().withoutPadding().encodeToString(challengeBytes);
-        
-        // Generate state parameter for CSRF protection
-        byte[] stateBytes = new byte[16];
-        random.nextBytes(stateBytes);
-        state = Base64.getUrlEncoder().withoutPadding().encodeToString(stateBytes);
-        
-        logger.debug("Generated PKCE parameters - state: " + state);
-    }
-    
-    /**
-     * Starts the local HTTP server to receive OAuth callback.
-     */
-    private void startCallbackServer() throws IOException {
-        IOException lastException = null;
-        
-        // Try to start server on the selected port first
-        for (int attempt = 0; attempt < 100; attempt++) {
-            try {
-                int tryPort = (port + attempt);
-                server = HttpServer.create(new InetSocketAddress("localhost", tryPort), 0);
-                server.createContext(REDIRECT_URI_PATH, new CallbackHandler());
-                server.createContext("/", new InstructionsHandler());
-                server.setExecutor(null);
-                server.start();
-                isRunning = true;
-                port = tryPort; // Update port to the one that actually worked
-                logger.info("OAuth callback server started on localhost:" + port);
-                return;
-            } catch (IOException e) {
-                lastException = e;
-                // Port not available, try next port
-                if (server != null) {
-                    try {
-                        server.stop(0);
-                    } catch (Exception ignored) {}
-                    server = null;
-                }
+            if (redirectListener != null) {
+                try { redirectListener.stop(); } catch (Exception ignored) {}
             }
         }
-        
-        // If we get here, no port was available
-        throw new IOException("Could not find available port for OAuth callback server", lastException);
-    }
-    
-    /**
-     * Stops the local HTTP server.
-     */
-    private void stopCallbackServer() {
-        if (server != null && isRunning) {
-            server.stop(0);
-            isRunning = false;
-            logger.info("OAuth callback server stopped");
-        }
-    }
-    
-    /**
-     * Builds the OAuth authorization URL with PKCE parameters.
-     */
-    private String buildAuthorizationUrl() throws Exception {
-        String baseUrl = appConfig.getAuthEndpointForCurrentEnv();
-        String clientId = appConfig.getEffectiveClientIdForCurrentEnv();
-        String redirectUri = "http://localhost:" + port + REDIRECT_URI_PATH;
-        
-        StringBuilder authUrl = new StringBuilder();
-        authUrl.append(baseUrl).append("/services/oauth2/authorize");
-        authUrl.append("?response_type=code");
-        authUrl.append("&client_id=").append(URLEncoder.encode(clientId, StandardCharsets.UTF_8.name()));
-        authUrl.append("&redirect_uri=").append(URLEncoder.encode(redirectUri, StandardCharsets.UTF_8.name()));
-        authUrl.append("&scope=").append(URLEncoder.encode("api", StandardCharsets.UTF_8.name()));
-        authUrl.append("&state=").append(URLEncoder.encode(state, StandardCharsets.UTF_8.name()));
-        if (usePkce && codeChallenge != null) {
-            authUrl.append("&code_challenge=").append(URLEncoder.encode(codeChallenge, StandardCharsets.UTF_8.name()));
-            authUrl.append("&code_challenge_method=S256");
-        }
-        
-        return authUrl.toString();
     }
     
     /**
@@ -282,77 +214,17 @@ public class OAuthServerFlow {
     private boolean exchangeCodeForTokens() throws com.salesforce.dataloader.exception.ParameterLoadException, OAuthFlowNotEnabledException {
         logger.info("Exchanging authorization code for tokens");
         try {
-            // Create token request
             String tokenUrl = appConfig.getAuthEndpointForCurrentEnv() + "/services/oauth2/token";
             String clientId = appConfig.getEffectiveClientIdForCurrentEnv();
-            String clientSecret = appConfig.getEffectiveClientSecretForCurrentEnv();
             String redirectUri = "http://localhost:" + port + REDIRECT_URI_PATH;
-            logger.info("Token exchange using client_id: " + clientId + ", redirect_uri: " + redirectUri);
-            
-            // Build token request parameters
-            List<BasicNameValuePair> params = new ArrayList<>();
-            params.add(new BasicNameValuePair("grant_type", "authorization_code"));
-            params.add(new BasicNameValuePair("client_id", clientId));
-            params.add(new BasicNameValuePair("code", authorizationCode));
-            params.add(new BasicNameValuePair("redirect_uri", redirectUri));
-            if (usePkce && codeVerifier != null) {
-                params.add(new BasicNameValuePair("code_verifier", codeVerifier));
-            }
-            
-            // Add client secret if using External Client App (confidential client)
-            if (appConfig.isExternalClientAppConfigured() && clientSecret != null && !clientSecret.trim().isEmpty()) {
-                params.add(new BasicNameValuePair("client_secret", clientSecret));
-                logger.debug("Using confidential client (External Client App) with client secret");
-            } else {
-                logger.debug("Using public client (Connected App) with PKCE only");
-            }
-            
-            // Make token request using existing HTTP client infrastructure
-            SimplePostInterface client = SimplePostFactory.getInstance(
-                appConfig, 
-                tokenUrl,
-                params.toArray(new BasicNameValuePair[0])
+            String codeVerifierToUse = usePkce && pkceParams != null ? pkceParams.codeVerifier : null;
+            org.json.JSONObject tokenResponse = OAuthPKCEUtil.exchangeCodeForToken(
+                tokenUrl, clientId, authorizationCode, redirectUri, codeVerifierToUse
             );
-            
-            client.post();
-            
-            if (!client.isSuccessful()) {
-                String errorResponse = null;
-                try {
-                    ByteArrayOutputStream result = new ByteArrayOutputStream();
-                    byte[] buffer = new byte[1024];
-                    InputStream in = client.getInput();
-                    for (int length; (length = in.read(buffer)) != -1; ) {
-                        result.write(buffer, 0, length);
-                    }
-                    errorResponse = result.toString(StandardCharsets.UTF_8.name());
-                } catch (Exception e) {
-                    // ignore
-                }
-                logger.error("Token exchange failed with status: " + client.getStatusCode() + " - " + client.getReasonPhrase());
-                logErrorResponse(client.getInput());
-                if (errorResponse != null && errorResponse.contains("invalid_client_id")) {
-                    logger.error("Invalid client ID used: " + clientId);
-                    if (statusConsumer != null) {
-                        statusConsumer.accept("The client ID configured is invalid. Please check your Data Loader settings and Salesforce Connected App configuration. Client ID: " + clientId);
-                    }
-                }
-                // Detect flow not enabled errors
-                if (errorResponse != null && (errorResponse.contains("unsupported_grant_type") || errorResponse.contains("invalid_grant") || errorResponse.contains("invalid_request") || errorResponse.contains("PKCE") || errorResponse.contains("code_challenge"))) {
-                    throw new OAuthFlowNotEnabledException("OAuth flow not enabled: " + errorResponse);
-                }
-                return false;
-            }
-            
-            // Parse JSON response
-            Map<?, ?> response = parseJsonResponse(client.getInput());
-            
-            if (response != null && response.containsKey("access_token")) {
-                String accessToken = (String) response.get("access_token");
-                String refreshToken = (String) response.get("refresh_token");
-                String instanceUrl = (String) response.get("instance_url");
-                
-                // Configure AppConfig with OAuth tokens
+            if (tokenResponse != null && tokenResponse.has("access_token")) {
+                String accessToken = tokenResponse.getString("access_token");
+                String refreshToken = tokenResponse.optString("refresh_token", null);
+                String instanceUrl = tokenResponse.optString("instance_url", null);
                 appConfig.setValue(AppConfig.PROP_OAUTH_ACCESSTOKEN, accessToken);
                 if (refreshToken != null) {
                     appConfig.setValue(AppConfig.PROP_OAUTH_REFRESHTOKEN, refreshToken);
@@ -361,12 +233,11 @@ public class OAuthServerFlow {
                     appConfig.setAuthEndpointForCurrentEnv(instanceUrl);
                     appConfig.setValue(AppConfig.PROP_OAUTH_INSTANCE_URL, instanceUrl);
                 }
-                
-                logger.info("OAuth tokens obtained successfully using " + 
+                logger.info("OAuth tokens obtained successfully using " +
                     (appConfig.isExternalClientAppConfigured() ? "External Client App" : "Connected App"));
                 return true;
             } else {
-                logger.error("Failed to obtain OAuth tokens: " + response);
+                logger.error("Failed to obtain OAuth tokens: " + tokenResponse);
                 return false;
             }
         } catch (com.salesforce.dataloader.exception.ParameterLoadException e) {
@@ -376,114 +247,6 @@ public class OAuthServerFlow {
         } catch (Exception e) {
             logger.error("Failed to exchange authorization code for tokens", e);
             return false;
-        }
-    }
-    
-    /**
-     * Handles the OAuth callback from Salesforce.
-     */
-    private class CallbackHandler implements HttpHandler {
-        @Override
-        public void handle(HttpExchange exchange) throws IOException {
-            String query = exchange.getRequestURI().getQuery();
-            logger.debug("Received OAuth callback: " + exchange.getRequestURI());
-            
-            try {
-                Map<String, String> params = parseQueryString(query);
-                
-                // Check for error
-                if (params.containsKey("error")) {
-                    logger.error("OAuth error: " + params.get("error") + " - " + params.get("error_description"));
-                    String errorMessage = Labels.getFormattedString("OAuthServerFlow.error.authFailed", params.get("error_description"));
-                    sendErrorResponse(exchange, errorMessage);
-                    // If error is a known flow-not-enabled error, propagate
-                    String err = params.get("error");
-                    String desc = params.get("error_description");
-                    if (err != null && (err.contains("unsupported_grant_type") || err.contains("invalid_grant") || err.contains("invalid_request") || (desc != null && (desc.contains("PKCE") || desc.contains("code_challenge"))))) {
-                        // Set authorizationCode to null so performOAuthFlow can detect and throw
-                        authorizationCode = null;
-                    }
-                    authLatch.countDown();
-                    return;
-                }
-                
-                // Verify state parameter (CSRF protection)
-                String returnedState = params.get("state");
-                if (!state.equals(returnedState)) {
-                    logger.error("State parameter mismatch - possible CSRF attack");
-                    sendErrorResponse(exchange, "Authorization failed: invalid state parameter");
-                    authLatch.countDown();
-                    return;
-                }
-                
-                // Extract authorization code
-                authorizationCode = params.get("code");
-                if (authorizationCode != null && !authorizationCode.trim().isEmpty()) {
-                    logger.info("Authorization code received successfully");
-                    sendSuccessResponse(exchange);
-                    authLatch.countDown();
-                } else {
-                    logger.error("No authorization code received");
-                    sendErrorResponse(exchange, "Authorization failed: no code received");
-                    authLatch.countDown();
-                }
-                
-            } catch (Exception e) {
-                logger.error("Error handling OAuth callback", e);
-                sendErrorResponse(exchange, "Error processing authorization callback");
-                authLatch.countDown();
-            }
-        }
-    }
-    
-    /**
-     * Handles requests to the root path with instructions.
-     */
-    private class InstructionsHandler implements HttpHandler {
-        @Override
-        public void handle(HttpExchange exchange) throws IOException {
-            String response = buildInstructionsPage();
-            exchange.getResponseHeaders().set("Content-Type", "text/html; charset=UTF-8");
-            exchange.sendResponseHeaders(200, response.getBytes(StandardCharsets.UTF_8).length);
-            
-            try (OutputStream os = exchange.getResponseBody()) {
-                os.write(response.getBytes(StandardCharsets.UTF_8));
-            }
-        }
-    }
-    
-    /**
-     * Builds the instructions page HTML.
-     */
-    private String buildInstructionsPage() {
-        return Labels.getString("OAuthServerFlow.instructionsPage");
-    }
-    
-    /**
-     * Sends a success response after OAuth completion.
-     */
-    private void sendSuccessResponse(HttpExchange exchange) throws IOException {
-        String response = Labels.getString("OAuthServerFlow.successResponse");
-        
-        exchange.getResponseHeaders().set("Content-Type", "text/html; charset=UTF-8");
-        exchange.sendResponseHeaders(200, response.getBytes(StandardCharsets.UTF_8).length);
-        
-        try (OutputStream os = exchange.getResponseBody()) {
-            os.write(response.getBytes(StandardCharsets.UTF_8));
-        }
-    }
-    
-    /**
-     * Sends an error response.
-     */
-    private void sendErrorResponse(HttpExchange exchange, String message) throws IOException {
-        String response = Labels.getFormattedString("OAuthServerFlow.errorResponseTemplate", message);
-        
-        exchange.getResponseHeaders().set("Content-Type", "text/html; charset=UTF-8");
-        exchange.sendResponseHeaders(400, response.getBytes(StandardCharsets.UTF_8).length);
-        
-        try (OutputStream os = exchange.getResponseBody()) {
-            os.write(response.getBytes(StandardCharsets.UTF_8));
         }
     }
     

@@ -105,6 +105,22 @@ public abstract class ConfigTestBase extends TestBase {
         this.baseConfig = testConfig;
     }
 
+    protected String getPKCEClientId() {
+        String id = getProperty("test.clientid.pkce");
+        if (id != null && !id.isEmpty()) return id;
+        return getProperty("test.clientid"); // fallback
+    }
+    protected String getServerClientId() {
+        String id = getProperty("test.clientid.server");
+        if (id != null && !id.isEmpty()) return id;
+        return getProperty("test.clientid"); // fallback
+    }
+    protected String getDeviceClientId() {
+        String id = getProperty("test.clientid.device");
+        if (id != null && !id.isEmpty()) return id;
+        return getProperty("test.clientid"); // fallback
+    }
+
     @Before
     public void setupController() throws Exception {
         super.setupController(getTestConfig());

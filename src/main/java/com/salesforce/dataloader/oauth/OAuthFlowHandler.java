@@ -225,6 +225,7 @@ public class OAuthFlowHandler {
     private boolean handleDeviceFlow() {
         try {
             OAuthBrowserDeviceLoginRunner deviceFlow = new OAuthBrowserDeviceLoginRunner(appConfig, true);
+            logger.info("[DeviceFlow] Created runner. Device code: " + deviceFlow.getDeviceCode() + ", User code: " + deviceFlow.getUserCode() + ", Verification URL: " + deviceFlow.getVerificationURLStr());
             int timeoutSeconds = appConfig.getOAuthTimeoutSeconds();
             int waited = 0;
             while (deviceFlow.getLoginStatus() == OAuthBrowserDeviceLoginRunner.LoginStatus.WAIT && waited < timeoutSeconds) {
@@ -236,6 +237,7 @@ public class OAuthFlowHandler {
                     return false;
                 }
             }
+            logger.info("[DeviceFlow] Final login status: " + deviceFlow.getLoginStatus());
             if (deviceFlow.getLoginStatus() == OAuthBrowserDeviceLoginRunner.LoginStatus.WAIT) {
                 logger.error("Device flow timed out after " + timeoutSeconds + " seconds");
                 if (statusConsumer != null) {
@@ -262,7 +264,7 @@ public class OAuthFlowHandler {
                 }
                 return true;
             } else {
-                logger.error("Device flow failed");
+                logger.error("Device flow failed. Status: " + deviceFlow.getLoginStatus());
                 if (statusConsumer != null) {
                     statusConsumer.accept("OAuth device flow failed. Please try again.");
                 }
