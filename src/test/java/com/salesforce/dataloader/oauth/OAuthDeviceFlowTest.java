@@ -134,7 +134,7 @@ public class OAuthDeviceFlowTest extends ConfigTestBase {
                         sb.append(line);
                     }
                     JSONObject tokenResponse = new JSONObject(sb.toString());
-                    System.out.println("[DeviceFlow] Poll attempt " + (attempt+1) + ": " + tokenResponse.toString(2));
+                    // System.out.println("[DeviceFlow] Poll attempt " + (attempt+1) + ": " + tokenResponse.toString(2));
                     if (tokenResponse.has("access_token")) {
                         return tokenResponse;
                     }
@@ -171,18 +171,18 @@ public class OAuthDeviceFlowTest extends ConfigTestBase {
         String verificationUri = deviceResponse.getString("verification_uri");
         int interval = deviceResponse.optInt("interval", 5);
         String deviceCode = deviceResponse.getString("device_code");
-        System.out.println("[DeviceFlow] User code: " + userCode);
-        System.out.println("[DeviceFlow] Verification URI: " + verificationUri);
+        // System.out.println("[DeviceFlow] User code: " + userCode);
+        // System.out.println("[DeviceFlow] Verification URI: " + verificationUri);
 
         // Step 2: Automate browser to enter user code and approve
         driver.get(verificationUri);
-        System.out.println("[DeviceFlow] Waiting for user code entry field...");
+        // System.out.println("[DeviceFlow] Waiting for user code entry field...");
         WebElement codeField = wait.until(ExpectedConditions.visibilityOfElementLocated(By.id("userCodeInput")));
         codeField.sendKeys(userCode);
         WebElement continueButton = wait.until(ExpectedConditions.elementToBeClickable(By.id("userCodeInputButton")));
         continueButton.click();
         // Salesforce login page
-        System.out.println("[DeviceFlow] Waiting for username field...");
+        // System.out.println("[DeviceFlow] Waiting for username field...");
         WebElement usernameField = wait.until(ExpectedConditions.visibilityOfElementLocated(By.id("username")));
         WebElement passwordField = wait.until(ExpectedConditions.visibilityOfElementLocated(By.id("password")));
         usernameField.sendKeys(username);
@@ -191,12 +191,12 @@ public class OAuthDeviceFlowTest extends ConfigTestBase {
         loginButton.click();
         // Consent screen (if present)
         try {
-            System.out.println("[DeviceFlow] Waiting for consent screen (if present)...");
+            // System.out.println("[DeviceFlow] Waiting for consent screen (if present)...");
             WebElement allowButton = wait.until(ExpectedConditions.elementToBeClickable(By.name("authorize")));
-            System.out.println("[DeviceFlow] Clicking allow...");
+            // System.out.println("[DeviceFlow] Clicking allow...");
             allowButton.click();
         } catch (Exception ignored) {
-            System.out.println("[DeviceFlow] Consent screen not present or skipped.");
+            // System.out.println("[DeviceFlow] Consent screen not present or skipped.");
         }
 
         // Step 3: Poll for token using shared utility
@@ -239,7 +239,7 @@ public class OAuthDeviceFlowTest extends ConfigTestBase {
             } catch (Exception e) {
                 throw new RuntimeException("Failed to parse user_code from URL: " + url, e);
             }
-            System.out.println("[DeviceFlowTest] Navigating Selenium to: " + url);
+            // System.out.println("[DeviceFlowTest] Navigating Selenium to: " + url);
             driver.get(url);
             try {
                 // Wait for the user_code field and click Connect if present
@@ -248,23 +248,23 @@ public class OAuthDeviceFlowTest extends ConfigTestBase {
                     codeField.clear();
                     codeField.sendKeys(userCode);
                     WebElement connectButton = wait.until(ExpectedConditions.elementToBeClickable(By.name("save")));
-                    System.out.println("[DeviceFlowTest] Entered user code and clicking Connect...");
+                    // System.out.println("[DeviceFlowTest] Entered user code and clicking Connect...");
                     connectButton.click();
 
                     // Debug output after clicking Connect
-                    System.out.println("[DeviceFlowTest] Current URL after Connect: " + driver.getCurrentUrl());
-                    System.out.println("[DeviceFlowTest] Page source after Connect: " + driver.getPageSource());
+                    // System.out.println("[DeviceFlowTest] Current URL after Connect: " + driver.getCurrentUrl());
+                    // System.out.println("[DeviceFlowTest] Page source after Connect: " + driver.getPageSource());
                     java.util.List<WebElement> inputs = driver.findElements(By.tagName("input"));
-                    for (WebElement input : inputs) {
-                        System.out.println("[DeviceFlowTest] Input field: id=" + input.getAttribute("id") + ", name=" + input.getAttribute("name") + ", type=" + input.getAttribute("type"));
-                    }
+                    // for (WebElement input : inputs) {
+                    //     System.out.println("[DeviceFlowTest] Input field: id=" + input.getAttribute("id") + ", name=" + input.getAttribute("name") + ", type=" + input.getAttribute("type"));
+                    // }
                 }
 
                 // Always wait for the login page after clicking Connect
                 try {
                     WebElement usernameField = wait.until(ExpectedConditions.visibilityOfElementLocated(By.id("username")));
                     WebElement passwordField = wait.until(ExpectedConditions.visibilityOfElementLocated(By.id("password")));
-                    System.out.println("[DeviceFlowTest] Login page detected, entering credentials...");
+                    // System.out.println("[DeviceFlowTest] Login page detected, entering credentials...");
                     usernameField.sendKeys(username);
                     passwordField.sendKeys(password);
                     WebElement loginButton = wait.until(ExpectedConditions.elementToBeClickable(By.id("Login")));
@@ -273,13 +273,13 @@ public class OAuthDeviceFlowTest extends ConfigTestBase {
                     try {
                         WebElement loginForm = driver.findElement(By.id("login_form"));
                         loginForm.submit();
-                        System.out.println("[DeviceFlowTest] Submitted login form via form.submit().");
+                        // System.out.println("[DeviceFlowTest] Submitted login form via form.submit().");
                     } catch (Exception e) {
-                        System.out.println("[DeviceFlowTest] form.submit() failed: " + e.getMessage());
+                        // System.out.println("[DeviceFlowTest] form.submit() failed: " + e.getMessage());
                     }
                     // Debug output after login attempt
-                    System.out.println("[DeviceFlowTest] URL after login attempt: " + driver.getCurrentUrl());
-                    System.out.println("[DeviceFlowTest] Page source after login attempt: " + driver.getPageSource());
+                    // System.out.println("[DeviceFlowTest] URL after login attempt: " + driver.getCurrentUrl());
+                    // System.out.println("[DeviceFlowTest] Page source after login attempt: " + driver.getPageSource());
 
                     // After login, wait for redirect to approval page or consent screen
                     try {
@@ -288,23 +288,23 @@ public class OAuthDeviceFlowTest extends ConfigTestBase {
                             driver1.getCurrentUrl().contains("RemoteAccessAuthorizationPage.apexp") ||
                             driver1.findElements(By.name("authorize")).size() > 0
                         );
-                        System.out.println("[DeviceFlowTest] Approval page or consent screen detected.");
+                        // System.out.println("[DeviceFlowTest] Approval page or consent screen detected.");
                         // Debug: print approval page source, all buttons, and forms
-                        System.out.println("[DeviceFlowTest] Approval page source: " + driver.getPageSource());
+                        // System.out.println("[DeviceFlowTest] Approval page source: " + driver.getPageSource());
                         java.util.List<WebElement> buttons = driver.findElements(By.tagName("button"));
-                        for (WebElement button : buttons) {
-                            System.out.println("[DeviceFlowTest] Button: name=" + button.getAttribute("name") + ", id=" + button.getAttribute("id") + ", text=" + button.getText());
-                        }
+                        // for (WebElement button : buttons) {
+                        //     System.out.println("[DeviceFlowTest] Button: name=" + button.getAttribute("name") + ", id=" + button.getAttribute("id") + ", text=" + button.getText());
+                        // }
                         java.util.List<WebElement> forms = driver.findElements(By.tagName("form"));
-                        for (WebElement form : forms) {
-                            System.out.println("[DeviceFlowTest] Form: name=" + form.getAttribute("name") + ", id=" + form.getAttribute("id") + ", action=" + form.getAttribute("action"));
-                        }
+                        // for (WebElement form : forms) {
+                        //     System.out.println("[DeviceFlowTest] Form: name=" + form.getAttribute("name") + ", id=" + form.getAttribute("id") + ", action=" + form.getAttribute("action"));
+                        // }
                         // Try to extract the redirect URL from the script and navigate to it
                         String pageSource = driver.getPageSource();
                         java.util.regex.Matcher matcher = java.util.regex.Pattern.compile("window.location.replace\\([\"']([^\"']+)[\"']\\)").matcher(pageSource);
                         if (matcher.find()) {
                             String redirectUrl = matcher.group(1);
-                            System.out.println("[DeviceFlowTest] Detected JS redirect, navigating to: " + redirectUrl);
+                            // System.out.println("[DeviceFlowTest] Detected JS redirect, navigating to: " + redirectUrl);
                             driver.get(redirectUrl);
                             // Wait for either the consent button or a success/confirmation message
                             try {
@@ -318,35 +318,35 @@ public class OAuthDeviceFlowTest extends ConfigTestBase {
                                 WebElement allowButton = null;
                                 try {
                                     allowButton = wait.until(ExpectedConditions.elementToBeClickable(By.name("authorize")));
-                                    System.out.println("[DeviceFlowTest] Classic consent screen detected, clicking Allow...");
+                                    // System.out.println("[DeviceFlowTest] Classic consent screen detected, clicking Allow...");
                                 } catch (Exception e1) {
                                     try {
                                         allowButton = wait.until(ExpectedConditions.elementToBeClickable(
                                             By.cssSelector("input[type='submit'][name='save'][value*='Allow']")));
-                                        System.out.println("[DeviceFlowTest] New consent screen detected, clicking Allow...");
+                                        // System.out.println("[DeviceFlowTest] New consent screen detected, clicking Allow...");
                                     } catch (Exception e2) {
-                                        System.out.println("[DeviceFlowTest] Consent screen not present after redirect, assuming already authorized or success.");
-                                        System.out.println("[DeviceFlowTest] Approval page source after redirect: " + driver.getPageSource());
+                                        // System.out.println("[DeviceFlowTest] Consent screen not present after redirect, assuming already authorized or success.");
+                                        // System.out.println("[DeviceFlowTest] Approval page source after redirect: " + driver.getPageSource());
                                     }
                                 }
                                 if (allowButton != null) {
                                     allowButton.click();
                                 }
                             } catch (Exception e) {
-                                System.out.println("[DeviceFlowTest] Consent/success screen not detected after redirect: " + e.getMessage());
-                                System.out.println("[DeviceFlowTest] Approval page source after redirect: " + driver.getPageSource());
+                                // System.out.println("[DeviceFlowTest] Consent/success screen not detected after redirect: " + e.getMessage());
+                                // System.out.println("[DeviceFlowTest] Approval page source after redirect: " + driver.getPageSource());
                             }
                         } else {
-                            System.out.println("[DeviceFlowTest] No JS redirect found in approval page source.");
+                            // System.out.println("[DeviceFlowTest] No JS redirect found in approval page source.");
                         }
                     } catch (Exception e) {
-                        System.out.println("[DeviceFlowTest] Approval page/consent screen not detected after login: " + e.getMessage());
+                        // System.out.println("[DeviceFlowTest] Approval page/consent screen not detected after login: " + e.getMessage());
                     }
                 } catch (Exception e) {
-                    System.out.println("[DeviceFlowTest] Login page not detected after Connect: " + e.getMessage());
+                    // System.out.println("[DeviceFlowTest] Login page not detected after Connect: " + e.getMessage());
                 }
             } catch (Exception e) {
-                System.out.println("[DeviceFlowTest] Selenium automation failed: " + e.getMessage());
+                // System.out.println("[DeviceFlowTest] Selenium automation failed: " + e.getMessage());
                 throw new RuntimeException(e);
             }
         };
@@ -358,7 +358,20 @@ public class OAuthDeviceFlowTest extends ConfigTestBase {
             Thread.sleep(1000);
             waited++;
         }
-        System.out.println("[DeviceFlowTest] Final login status: " + runner.getLoginStatus());
+        // System.out.println("[DeviceFlowTest] Final login status: " + runner.getLoginStatus());
         assertTrue("Device flow did not succeed", runner.getLoginStatus() == OAuthBrowserDeviceLoginRunner.LoginStatus.SUCCESS);
+
+        // Retrieve access token and instance URL from appConfig
+        String accessToken = appConfig.getString(AppConfig.PROP_OAUTH_ACCESSTOKEN);
+        String instanceUrl = appConfig.getString(AppConfig.PROP_OAUTH_INSTANCE_URL);
+        assertTrue("Org does not have custom object TestField__c with label TestField",
+            OAuthTestUtil.orgHasCustomObject(
+                accessToken,
+                instanceUrl,
+                "TestField",
+                "TestField__c",
+                Controller.getAPIVersion()
+            )
+        );
     }
 } 
