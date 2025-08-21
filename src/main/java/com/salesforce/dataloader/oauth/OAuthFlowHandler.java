@@ -74,9 +74,6 @@ public class OAuthFlowHandler {
         logger.info("Checking if PKCE flow is enabled in Connected App...");
         boolean pkceEnabled = isPkceFlowEnabled();
         logger.info("PKCE flow enabled: " + pkceEnabled);
-        logger.info("Checking if device flow is enabled in Connected App...");
-        boolean deviceEnabled = isDeviceFlowEnabled();
-        logger.info("Device flow enabled: " + deviceEnabled);
 
         if (pkceEnabled) {
             logger.info("PKCE flow is enabled, launching browser for PKCE login");
@@ -126,17 +123,6 @@ public class OAuthFlowHandler {
                 }
                 return false;
             }
-        } else if (deviceEnabled) {
-            logger.info("Device flow is enabled, launching device flow");
-            if (statusConsumer != null) {
-                statusConsumer.accept(Labels.getString("OAuthLoginControl.statusAttemptingDevice"));
-            }
-            boolean deviceResult = handleDeviceFlow();
-            appConfig.setLastOAuthFlow("Device");
-            if (loginButtonEnabler != null) {
-                Display.getDefault().asyncExec(loginButtonEnabler);
-            }
-            return deviceResult;
         } else {
             logger.error("None of the supported OAuth flows are enabled in the Connected App");
             if (statusConsumer != null) {
@@ -149,66 +135,6 @@ public class OAuthFlowHandler {
         }
         // Defensive return for compiler
         return false;
-    }
-
-    /**
-     * Handles the device flow OAuth process.
-     *
-     * @return true if device flow was successful, false otherwise
-     */
-    private boolean handleDeviceFlow() {
-        try {
-            OAuthBrowserDeviceLoginRunner deviceFlow = new OAuthBrowserDeviceLoginRunner(appConfig, true);
-            int timeoutSeconds = appConfig.getOAuthTimeoutSeconds();
-            int waited = 0;
-            while (deviceFlow.getLoginStatus() == OAuthBrowserDeviceLoginRunner.LoginStatus.WAIT && waited < timeoutSeconds) {
-                try {
-                    Thread.sleep(1000);
-                    waited++;
-                } catch (InterruptedException e) {
-                    logger.error("Device flow interrupted", e);
-                    return false;
-                }
-            }
-            if (deviceFlow.getLoginStatus() == OAuthBrowserDeviceLoginRunner.LoginStatus.WAIT) {
-                logger.error("Device flow timed out after " + timeoutSeconds + " seconds");
-                if (statusConsumer != null) {
-                    statusConsumer.accept("OAuth device flow timed out. Please try again or check your configuration.");
-                }
-                return false;
-            } else if (deviceFlow.getLoginStatus() == OAuthBrowserDeviceLoginRunner.LoginStatus.SUCCESS) {
-                logger.info("Device flow completed successfully");
-                // Update controller's login state
-                if (controller != null) {
-                    try {
-                        if (controller.login()) {
-                            controller.saveConfig();
-                            Display.getDefault().asyncExec(() -> controller.updateLoaderWindowTitleAndCacheUserInfoForTheSession());
-                            return true;
-                        }
-                    } catch (Exception e) {
-                        logger.error("Failed to update controller's login state", e);
-                        return false;
-                    }
-                }
-                if (statusConsumer != null) {
-                    statusConsumer.accept("OAuth device flow completed successfully.");
-                }
-                return true;
-            } else {
-                logger.error("Device flow failed");
-                if (statusConsumer != null) {
-                    statusConsumer.accept("OAuth device flow failed. Please try again.");
-                }
-                return false;
-            }
-        } catch (Exception e) {
-            logger.error("Device flow failed with error: " + e.getMessage(), e);
-            if (statusConsumer != null) {
-                statusConsumer.accept("OAuth device flow failed. Please try again.");
-            }
-            return false;
-        }
     }
 
     private boolean isPkceFlowEnabled() {
@@ -235,26 +161,6 @@ public class OAuthFlowHandler {
             return isFlowEnabledFromError(error, fullResponse);
         } catch (Exception e) {
             logger.error("Exception in PKCE pre-flight check", e);
-            return false;
-        }
-    }
-
-    private boolean isDeviceFlowEnabled() {
-        try {
-            String tokenUrl = appConfig.getAuthEndpointForCurrentEnv() + "/services/oauth2/token";
-            SimplePostInterface client = SimplePostFactory.getInstance(appConfig, tokenUrl,
-                new BasicNameValuePair("response_type", "device_code"),
-                new BasicNameValuePair(AppConfig.CLIENT_ID_HEADER_NAME, appConfig.getEffectiveClientIdForCurrentEnv()),
-                new BasicNameValuePair("scope", "api")
-            );
-            client.post();
-            String error = getErrorFromResponse(client);
-            logger.info("Device flow pre-flight error response: " + error);
-            String fullResponse = getFullResponse(client);
-            logger.info("Device flow pre-flight full response: " + fullResponse);
-            return isFlowEnabledFromError(error, fullResponse);
-        } catch (Exception e) {
-            logger.error("Exception in device flow pre-flight check", e);
             return false;
         }
     }
