@@ -74,9 +74,6 @@ public class OAuthFlowHandler {
         logger.info("Checking if PKCE flow is enabled in Connected App...");
         boolean pkceEnabled = isPkceFlowEnabled();
         logger.info("PKCE flow enabled: " + pkceEnabled);
-        logger.info("Checking if server flow is enabled in Connected App...");
-        boolean serverEnabled = isServerFlowEnabled();
-        logger.info("Server flow enabled: " + serverEnabled);
         logger.info("Checking if device flow is enabled in Connected App...");
         boolean deviceEnabled = isDeviceFlowEnabled();
         logger.info("Device flow enabled: " + deviceEnabled);
@@ -123,59 +120,6 @@ public class OAuthFlowHandler {
                 logger.error("PKCE flow failed: " + e.getMessage(), e);
                 if (statusConsumer != null) {
                     statusConsumer.accept(Labels.getString("OAuthLoginControl.statusPKCEFailedFallbackBrowser"));
-                }
-                if (loginButtonEnabler != null) {
-                    Display.getDefault().asyncExec(loginButtonEnabler);
-                }
-                return false;
-            }
-        } else if (serverEnabled) {
-            logger.info("Server flow is enabled, launching browser for login");
-            if (statusConsumer != null) {
-                statusConsumer.accept(Labels.getString("OAuthLoginControl.statusAttemptingServer"));
-            }
-            try {
-                OAuthServerFlow serverFlow = new OAuthServerFlow(appConfig, false, statusConsumer);
-                if (serverFlow.performOAuthFlow()) {
-                    logger.info("Server flow completed successfully");
-                    if (statusConsumer != null) {
-                        statusConsumer.accept(Labels.getString("OAuthLoginControl.statusServerSuccess"));
-                    }
-                    if (controller != null) {
-                        try {
-                            appConfig.setLastOAuthFlow("Server");
-                            boolean loginSuccess = controller.login();
-                            logger.info("controller.login() after server flow returned: " + loginSuccess);
-                            if (loginSuccess) {
-                                controller.saveConfig();
-                                Display.getDefault().asyncExec(() -> controller.updateLoaderWindowTitleAndCacheUserInfoForTheSession());
-                                if (loginButtonEnabler != null) {
-                                    Display.getDefault().asyncExec(loginButtonEnabler);
-                                }
-                                return true;
-                            } else {
-                                logger.error("controller.login() returned false after server flow. UI will not advance.");
-                            }
-                        } catch (Exception e) {
-                            logger.error("Failed to update controller's login state after server flow", e);
-                            if (statusConsumer != null) {
-                                statusConsumer.accept(Labels.getString("OAuthLoginControl.statusControllerUpdateError"));
-                            }
-                            if (loginButtonEnabler != null) {
-                                Display.getDefault().asyncExec(loginButtonEnabler);
-                            }
-                            return false;
-                        }
-                    }
-                    if (loginButtonEnabler != null) {
-                        Display.getDefault().asyncExec(loginButtonEnabler);
-                    }
-                    return true;
-                }
-            } catch (Exception e) {
-                logger.error("Server flow failed: " + e.getMessage(), e);
-                if (statusConsumer != null) {
-                    statusConsumer.accept(Labels.getString("OAuthLoginControl.statusServerFailedFallbackDevice"));
                 }
                 if (loginButtonEnabler != null) {
                     Display.getDefault().asyncExec(loginButtonEnabler);
@@ -291,29 +235,6 @@ public class OAuthFlowHandler {
             return isFlowEnabledFromError(error, fullResponse);
         } catch (Exception e) {
             logger.error("Exception in PKCE pre-flight check", e);
-            return false;
-        }
-    }
-
-    private boolean isServerFlowEnabled() {
-        try {
-            String tokenUrl = appConfig.getAuthEndpointForCurrentEnv() + "/services/oauth2/token";
-            // Use dummy code, NO PKCE params
-            String dummyCode = "dummy";
-            SimplePostInterface client = SimplePostFactory.getInstance(appConfig, tokenUrl,
-                new BasicNameValuePair("grant_type", "authorization_code"),
-                new BasicNameValuePair("client_id", appConfig.getEffectiveClientIdForCurrentEnv()),
-                new BasicNameValuePair("code", dummyCode),
-                new BasicNameValuePair("redirect_uri", "http://localhost:7171/OauthRedirect")
-            );
-            client.post();
-            String error = getErrorFromResponse(client);
-            logger.info("Server flow pre-flight error response: " + error);
-            String fullResponse = getFullResponse(client);
-            logger.info("Server flow pre-flight full response: " + fullResponse);
-            return isFlowEnabledFromError(error, fullResponse);
-        } catch (Exception e) {
-            logger.error("Exception in server flow pre-flight check", e);
             return false;
         }
     }
