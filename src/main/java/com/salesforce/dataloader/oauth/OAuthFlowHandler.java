@@ -28,21 +28,13 @@ package com.salesforce.dataloader.oauth;
 
 import com.salesforce.dataloader.config.AppConfig;
 import com.salesforce.dataloader.controller.Controller;
-import com.salesforce.dataloader.util.OAuthBrowserDeviceLoginRunner;
-import com.salesforce.dataloader.util.OAuthServerFlow;
-import com.salesforce.dataloader.util.DLLogManager;
 import com.salesforce.dataloader.ui.Labels;
+import com.salesforce.dataloader.util.DLLogManager;
+import com.salesforce.dataloader.util.OAuthServerFlow;
 import org.apache.logging.log4j.Logger;
 import org.eclipse.swt.widgets.Display;
 
-import java.io.InputStream;
-
-import java.nio.charset.StandardCharsets;
 import java.util.function.Consumer;
-import com.salesforce.dataloader.client.transport.SimplePostFactory;
-import com.salesforce.dataloader.client.transport.SimplePostInterface;
-import org.apache.http.message.BasicNameValuePair;
-import java.io.ByteArrayOutputStream;
 
 /**
  * Utility class to handle OAuth flows (PKCE and Device Flow) for both UI and batch modes.
