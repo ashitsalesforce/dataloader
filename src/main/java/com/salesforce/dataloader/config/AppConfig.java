@@ -298,8 +298,6 @@ public class AppConfig {
     public static final String PROP_SELECTED_SERVER_ENVIRONMENT = OAUTH_PREFIX + "environment";
     public static final String PROP_OAUTH_ACCESSTOKEN = OAUTH_PREFIX + "accesstoken";
     public static final String PROP_OAUTH_REFRESHTOKEN = OAUTH_PREFIX + "refreshtoken";
-    public static final String PROP_OAUTH_LOGIN_FROM_BROWSER = OAUTH_PREFIX + "loginfrombrowser";
-    public static final String PROP_OAUTH_LOGIN_FROM_BROWSER_DEVICE_OAUTH = OAUTH_PREFIX + "device.loginfrombrowser";
     public static final String PROP_OAUTH_PKCE_PORT = OAUTH_PREFIX + "pkce.port";
     public static final String PROP_CLIENTID_PROD_PARTNER = OAUTH_PREFIX 
             + SERVER_PROD_ENVIRONMENT_VAL 
@@ -762,7 +760,6 @@ public class AppConfig {
         setDefaultValue(PROP_BULKV2_API_ENABLED, false);
         setDefaultValue(PROP_UPDATE_WITH_EXTERNALID, false);
         setDefaultValue(PROP_DELETE_WITH_EXTERNALID, false);
-        setDefaultValue(PROP_OAUTH_LOGIN_FROM_BROWSER_DEVICE_OAUTH, false);
         setDefaultValue(PROP_OAUTH_PKCE_PORT, DEFAULT_OAUTH_PKCE_PORT);
         setDefaultValue(PROP_LOAD_PRESERVE_WHITESPACE_IN_RICH_TEXT, true);
         setDefaultValue(CLI_OPTION_RUN_MODE, RUN_MODE_UI_VAL);

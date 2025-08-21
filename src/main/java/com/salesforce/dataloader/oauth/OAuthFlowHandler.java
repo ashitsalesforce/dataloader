@@ -71,16 +71,6 @@ public class OAuthFlowHandler {
         logger.info("Starting OAuth flow");
         appConfig.setLastOAuthFlow("PKCE");
 
-        String deviceLoginFromBrowser = appConfig.getString(AppConfig.PROP_OAUTH_LOGIN_FROM_BROWSER_DEVICE_OAUTH);
-        boolean deviceLoginFromBrowserEnabled = "true".equalsIgnoreCase(deviceLoginFromBrowser);
-        logger.debug("Device login from browser setting: " + deviceLoginFromBrowser);
-        logger.debug("Device login from browser enabled: " + deviceLoginFromBrowserEnabled);
-
-        if (deviceLoginFromBrowserEnabled) {
-            logger.info("Device login from browser is enabled, using device flow");
-            return handleDeviceFlow();
-        }
-
         logger.info("Checking if PKCE flow is enabled in Connected App...");
         boolean pkceEnabled = isPkceFlowEnabled();
         logger.info("PKCE flow enabled: " + pkceEnabled);
