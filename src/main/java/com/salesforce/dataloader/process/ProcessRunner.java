@@ -39,22 +39,13 @@ import com.salesforce.dataloader.exception.ParameterLoadException;
 import com.salesforce.dataloader.exception.ProcessInitializationException;
 import com.salesforce.dataloader.util.AppUtil;
 import com.salesforce.dataloader.util.ExitException;
-import com.salesforce.dataloader.util.OAuthBrowserDeviceLoginRunner;
-import com.salesforce.dataloader.util.OAuthServerFlow;
 import com.sforce.soap.partner.fault.ApiFault;
 import com.salesforce.dataloader.util.DLLogManager;
 import org.apache.logging.log4j.Logger;
 import org.springframework.beans.factory.InitializingBean;
 import com.salesforce.dataloader.oauth.OAuthFlowHandler;
 
-import java.io.BufferedReader;
 import java.io.IOException;
-import java.io.InputStreamReader;
-import java.net.HttpURLConnection;
-import java.net.ServerSocket;
-import java.net.URL;
-import java.net.URLEncoder;
-import java.nio.charset.StandardCharsets;
 import java.util.Calendar;
 import java.util.HashMap;
 import java.util.Map;
@@ -125,16 +116,12 @@ public class ProcessRunner implements InitializingBean, IProcess {
 
     private void handleOAuthLogin(AppConfig appConfig) throws OAuthBrowserLoginRunnerException {
         if (requiresOAuthLogin(appConfig)) {
-        	if (doDeviceLoginFromBrowser(appConfig)) {
-			} else {
-	            doBrowserLogin(appConfig);
-			}
+        	doBrowserLogin(appConfig);
         }
     }
 
     private boolean requiresOAuthLogin(AppConfig appConfig) {
-        return !(appConfig.contains(AppConfig.PROP_USERNAME) && appConfig.contains(AppConfig.PROP_PASSWORD))
-                && appConfig.getBoolean(AppConfig.PROP_OAUTH_LOGIN_FROM_BROWSER);
+        return !(appConfig.contains(AppConfig.PROP_USERNAME) && appConfig.contains(AppConfig.PROP_PASSWORD));
     }
 
     private void setThreadNameIfNeeded(AppConfig appConfig) {
@@ -315,21 +302,6 @@ public class ProcessRunner implements InitializingBean, IProcess {
                 logger.fatal(Messages.getFormattedString(AppConfig.class.getSimpleName() + ".errorNoRequiredParameter", propName));
                 throw new ParameterLoadException(Messages.getFormattedString(AppConfig.class.getSimpleName() + ".errorNoRequiredParameter", propName));
             }
-        }
-    }
-
-    private boolean doDeviceLoginFromBrowser(AppConfig appConfig) {
-        logger.info("Starting OAuth login from browser");
-        try {
-            if (controller == null) {
-                logger.error("Controller is not initialized");
-                return false;
-            }
-            OAuthFlowHandler oauthHandler = new OAuthFlowHandler(appConfig, (status) -> { if (status != null) logger.info("OAuth status: " + status); }, controller, () -> {});
-            return oauthHandler.handleOAuthLogin();
-        } catch (Exception e) {
-            logger.error("OAuth login failed with error: " + e.getMessage(), e);
-            return false;
         }
     }
 

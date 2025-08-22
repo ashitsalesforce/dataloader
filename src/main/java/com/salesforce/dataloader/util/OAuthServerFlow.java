@@ -144,7 +144,10 @@ public class OAuthServerFlow {
             logger.info("OAuth client_id: " + appConfig.getEffectiveClientIdForCurrentEnv());
             logger.info("OAuth redirect_uri: http://localhost:" + port + REDIRECT_URI_PATH);
             if (statusConsumer != null) {
-                statusConsumer.accept("A browser window has opened for login. If you do not see it, please check your pop-up blocker or open the following URL manually: " + authUrl);
+                statusConsumer.accept("The application will wait for "
+                        + appConfig.getOAuthTimeoutSeconds() 
+                        + " seconds for the OAuth flow to complete."
+                        + "\n\nA browser window has opened for login. If you do not see it, please check your pop-up blocker or open the following URL manually: " + authUrl);
             }
             
             // Step 4: Open browser
