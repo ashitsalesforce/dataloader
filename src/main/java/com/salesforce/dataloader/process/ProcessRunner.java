@@ -53,10 +53,8 @@ import java.util.Map;
 public class ProcessRunner implements InitializingBean, IProcess {
 
     private static final Logger logger = DLLogManager.getLogger(ProcessRunner.class);
-    private static final String[] PROP_NAME_ARRAY = {
+    private static final String[] REQUIRED_PROP_NAME_ARRAY = {
             AppConfig.PROP_OPERATION,
-            AppConfig.PROP_USERNAME,
-            AppConfig.PROP_PASSWORD,
             AppConfig.PROP_DAO_TYPE,
             AppConfig.PROP_DAO_NAME,
             AppConfig.PROP_ENTITY,
@@ -84,7 +82,7 @@ public class ProcessRunner implements InitializingBean, IProcess {
             initializeController();
             AppConfig appConfig = controller.getAppConfig();
             validateConfigProperties(appConfig);
-            handleOAuthLogin(appConfig);
+            authenticate(appConfig);
             setThreadNameIfNeeded(appConfig);
             createStatusFilesIfNeeded(appConfig);
             executeProcess(appConfig);
@@ -114,10 +112,10 @@ public class ProcessRunner implements InitializingBean, IProcess {
         }
     }
 
-    private void handleOAuthLogin(AppConfig appConfig) throws OAuthBrowserLoginRunnerException {
+    private void authenticate(AppConfig appConfig) throws OAuthBrowserLoginRunnerException {
         // Batch: use OAuth browser flow only when session ID is not configured.
         if (requiresOAuthLogin(appConfig)) {
-            doBrowserLogin(appConfig);
+            doOAuthLogin(appConfig);
         }
     }
 
@@ -125,12 +123,13 @@ public class ProcessRunner implements InitializingBean, IProcess {
         // Batch with session ID: skip browser login
         if (appConfig.getBoolean(AppConfig.PROP_SFDC_INTERNAL) && appConfig.getBoolean(AppConfig.PROP_SFDC_INTERNAL_IS_SESSION_ID_LOGIN)) {
             String sid = appConfig.getString(AppConfig.PROP_SFDC_INTERNAL_SESSION_ID);
-            if (sid != null && !sid.trim().isEmpty()) {
+            if (!sid.isBlank()) {
                 return false;
             }
         }
-        if (appConfig.contains(AppConfig.PROP_OAUTH_ACCESSTOKEN)
-                || appConfig.contains(AppConfig.PROP_PASSWORD)) {
+        // Batch: use OAuth browser flow only when access token is not provided.
+        if ((!appConfig.getString(AppConfig.PROP_OAUTH_ACCESSTOKEN).isBlank() && !appConfig.getString(AppConfig.PROP_OAUTH_INSTANCE_URL).isBlank())
+                || (!appConfig.getString(AppConfig.PROP_USERNAME).isBlank() && !appConfig.getString(AppConfig.PROP_PASSWORD).isBlank())) {
             return false; // If either access token or password is provided, we assume OAuth login is not required
         }
         return true; // If neither access token nor password is provided, we assume OAuth login is required
@@ -305,21 +304,16 @@ public class ProcessRunner implements InitializingBean, IProcess {
         if (appConfig == null) {
             throw new ProcessInitializationException("Configuration not initialized");
         }
-        for (String propName : PROP_NAME_ARRAY) {
-            String propVal = appConfig.getString(propName);
-            if (propName.equals(AppConfig.PROP_PASSWORD) && (propVal == null || propVal.isBlank())) {
-            	if (appConfig.getString(AppConfig.PROP_OAUTH_ACCESSTOKEN) != null && !appConfig.getString(AppConfig.PROP_OAUTH_ACCESSTOKEN).isBlank()) {
-            		continue; // In case of OAuth, password can be blank as access token will be used for authentication
-            	}
-            }
-            if (propVal == null || propVal.isBlank()) {
-                logger.fatal(Messages.getFormattedString(AppConfig.class.getSimpleName() + ".errorNoRequiredParameter", propName));
-                throw new ParameterLoadException(Messages.getFormattedString(AppConfig.class.getSimpleName() + ".errorNoRequiredParameter", propName));
+        for (String requiredPropName : REQUIRED_PROP_NAME_ARRAY) {
+            String requiredPropVal = appConfig.getString(requiredPropName); // never null
+            if (requiredPropVal.isBlank()) {
+                logger.fatal(Messages.getFormattedString(AppConfig.class.getSimpleName() + ".errorNoRequiredParameter", requiredPropName));
+                throw new ParameterLoadException(Messages.getFormattedString(AppConfig.class.getSimpleName() + ".errorNoRequiredParameter", requiredPropName));
             }
         }
     }
 
-    void doBrowserLogin(AppConfig appConfig) throws OAuthBrowserLoginRunnerException {
+    void doOAuthLogin(AppConfig appConfig) throws OAuthBrowserLoginRunnerException {
         try {
             logger.debug("Starting OAuth browser login...");
             logger.debug("A browser window will open for you to log in to Salesforce.");

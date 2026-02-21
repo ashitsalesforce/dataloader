@@ -77,9 +77,11 @@ public class OAuthFlowHandler {
                     try {
                         if (controller.login()) {
                             controller.saveConfig();
-                            Display.getDefault().asyncExec(() -> controller.updateLoaderWindowTitleAndCacheUserInfoForTheSession());
-                            if (loginButtonEnabler != null) {
-                                Display.getDefault().asyncExec(loginButtonEnabler);
+                            if (!appConfig.isBatchMode()) {
+                                Display.getDefault().asyncExec(() -> controller.updateLoaderWindowTitleAndCacheUserInfoForTheSession());
+                                if (loginButtonEnabler != null) {
+                                    Display.getDefault().asyncExec(loginButtonEnabler);
+                                }
                             }
                             return true;
                         }
@@ -88,13 +90,13 @@ public class OAuthFlowHandler {
                         if (statusConsumer != null) {
                             statusConsumer.accept(Labels.getString("OAuthLoginControl.statusControllerUpdateError"));
                         }
-                        if (loginButtonEnabler != null) {
+                        if (!appConfig.isBatchMode() && loginButtonEnabler != null) {
                             Display.getDefault().asyncExec(loginButtonEnabler);
                         }
                         return false;
                     }
                 }
-                if (loginButtonEnabler != null) {
+                if (!appConfig.isBatchMode() && loginButtonEnabler != null) {
                     Display.getDefault().asyncExec(loginButtonEnabler);
                 }
                 return true;
@@ -111,7 +113,7 @@ public class OAuthFlowHandler {
             if (statusConsumer != null) {
                 statusConsumer.accept(Labels.getString("OAuthLoginControl.statusPKCEFailedFallbackBrowser"));
             }
-            if (loginButtonEnabler != null) {
+            if (!appConfig.isBatchMode() && loginButtonEnabler != null) {
                 Display.getDefault().asyncExec(loginButtonEnabler);
             }
             return false;
