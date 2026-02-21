@@ -39,6 +39,7 @@ import java.nio.file.Files;
 import java.nio.file.Paths;
 import java.security.GeneralSecurityException;
 import java.security.SecureRandom;
+import java.util.Base64;
 
 import javax.crypto.Cipher;
 import javax.crypto.spec.IvParameterSpec;
@@ -210,6 +211,9 @@ public class EncryptionAesUtil {
 
     public String decryptMsg(String cipherMsgString) throws GeneralSecurityException {
         try {
+        	if (!isEncrypted(cipherMsgString)) {
+        		return cipherMsgString;
+        	}
             ensureKeyIsSet();
             byte[] cipherMsg = EncryptionUtil.textToBytes(cipherMsgString);
             return decryptMsg(cipherMsg, cipherKey);
@@ -218,6 +222,20 @@ public class EncryptionAesUtil {
             throw new GeneralSecurityException("Error to decrypt message: ", e);
         }
     }
+
+    public boolean isEncrypted(String value) {
+        try {
+            // Check if the value is Base64 encoded
+            byte[] decodedBytes = Base64.getDecoder().decode(value);
+            
+            // Check if the length is at least the size of the IV
+            return decodedBytes.length > EncryptionAesUtil.IV_LENGTH_IN_BYTES;
+        } catch (IllegalArgumentException e) {
+            // If decoding fails, it's not Base64 and likely not encrypted
+            return false;
+        }
+    }
+
 
     public byte[] encryptMsg(String msg, byte[] encryptionKey) throws GeneralSecurityException {
 

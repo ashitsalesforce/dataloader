@@ -398,9 +398,10 @@ public class EncryptionUtilTest extends ConfigTestBase {
         assertEquals(2, encryptionResultParts.length);
         String encryptedText = encryptionResultParts[1].trim();
 
+        // Non-encrypted input is passed through (decryptMsg returns as-is when !isEncrypted), so exit code is success
         String[] decryptionArgs = {"-d", "encryptedText"};
         int decryptionResult = EncryptionUtil.execute(decryptionArgs);
-        assertEquals(AppUtil.EXIT_CODE_CLIENT_ERROR, decryptionResult);
+        assertEquals(AppUtil.EXIT_CODE_NO_ERRORS, decryptionResult);
         
         String[] decryptionArgs2 = {"-d", encryptedText};
         // Redirect System.out for testing

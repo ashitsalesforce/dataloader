@@ -83,8 +83,8 @@ public class ProcessRunner implements InitializingBean, IProcess {
         try {
             initializeController();
             AppConfig appConfig = controller.getAppConfig();
-            handleOAuthLogin(appConfig);
             validateConfigProperties(appConfig);
+            handleOAuthLogin(appConfig);
             setThreadNameIfNeeded(appConfig);
             createStatusFilesIfNeeded(appConfig);
             executeProcess(appConfig);
@@ -115,13 +115,25 @@ public class ProcessRunner implements InitializingBean, IProcess {
     }
 
     private void handleOAuthLogin(AppConfig appConfig) throws OAuthBrowserLoginRunnerException {
+        // Batch: use OAuth browser flow only when session ID is not configured.
         if (requiresOAuthLogin(appConfig)) {
-        	doBrowserLogin(appConfig);
+            doBrowserLogin(appConfig);
         }
     }
 
     private boolean requiresOAuthLogin(AppConfig appConfig) {
-        return !(appConfig.contains(AppConfig.PROP_USERNAME) && appConfig.contains(AppConfig.PROP_PASSWORD));
+        // Batch with session ID: skip browser login
+        if (appConfig.getBoolean(AppConfig.PROP_SFDC_INTERNAL) && appConfig.getBoolean(AppConfig.PROP_SFDC_INTERNAL_IS_SESSION_ID_LOGIN)) {
+            String sid = appConfig.getString(AppConfig.PROP_SFDC_INTERNAL_SESSION_ID);
+            if (sid != null && !sid.trim().isEmpty()) {
+                return false;
+            }
+        }
+        if (appConfig.contains(AppConfig.PROP_OAUTH_ACCESSTOKEN)
+                || appConfig.contains(AppConfig.PROP_PASSWORD)) {
+            return false; // If either access token or password is provided, we assume OAuth login is not required
+        }
+        return true; // If neither access token nor password is provided, we assume OAuth login is required
     }
 
     private void setThreadNameIfNeeded(AppConfig appConfig) {
@@ -296,7 +308,9 @@ public class ProcessRunner implements InitializingBean, IProcess {
         for (String propName : PROP_NAME_ARRAY) {
             String propVal = appConfig.getString(propName);
             if (propName.equals(AppConfig.PROP_PASSWORD) && (propVal == null || propVal.isBlank())) {
-                propVal = appConfig.getString(AppConfig.PROP_OAUTH_ACCESSTOKEN);
+            	if (appConfig.getString(AppConfig.PROP_OAUTH_ACCESSTOKEN) != null && !appConfig.getString(AppConfig.PROP_OAUTH_ACCESSTOKEN).isBlank()) {
+            		continue; // In case of OAuth, password can be blank as access token will be used for authentication
+            	}
             }
             if (propVal == null || propVal.isBlank()) {
                 logger.fatal(Messages.getFormattedString(AppConfig.class.getSimpleName() + ".errorNoRequiredParameter", propName));
